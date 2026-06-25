@@ -1,0 +1,31 @@
+# vibe-launch 配置示例
+# 复制成 vibe-launch.yaml（同目录）或 ~/.vibe-launch/config.yaml
+# servers 一般不用手写 —— 跑 `vibe-launch server add` 会自动配 SSH 并写进来。
+# 重活（容器/redis/反代）交给 1Panel / docker；这里只管"部署编排 + 清单"。
+
+servers:
+  myserver:
+    host: your-server-ip-or-domain
+    user: root
+    port: 22
+    # vibe-launch 自管的专用 key（server add 时自动生成并装到服务器）
+    identityFile: ~/.vibe-launch/id_ed25519
+    note: 海外 / 国内 / 用途随你写
+
+projects:
+  myapp:
+    server: myserver
+    dir: /path/to/app                      # 服务器上的代码目录（git checkout）
+    # ↓ 可插拔的部署命令（在服务器上跑）—— 不挑生态，填你自己的更新方式：
+    deploy: git pull && docker restart myapp-api myapp-web
+    containers:                            # 用于 status 看容器状态
+      - myapp-api
+      - myapp-web
+    health:                               # 部署后健康检查（服务器本地 curl）
+      - http://127.0.0.1:8000/health
+
+  # 别的项目可以用完全不同的部署机制 —— 工具不挑：
+  # compose-app:
+  #   server: myserver
+  #   dir: /path/to/foo
+  #   deploy: docker compose pull && docker compose up -d

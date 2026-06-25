@@ -1,0 +1,8 @@
+node_modules/
+dist/
+# 真实配置含服务器信息，不入库（只发 example）
+vibe-launch.yaml
+vibe-launch.yml
+.vibe-launch/
+*.log
+.DS_Store

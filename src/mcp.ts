@@ -1,0 +1,87 @@
+// MCP server：把部署能力暴露给 Claude Code / Cursor / Codex 等 AI 工具
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { loadConfig, saveConfig, addProject } from "./core/config.js";
+import { deploy } from "./core/deploy.js";
+import { status } from "./core/status.js";
+import { onboard } from "./core/onboard.js";
+
+function text(obj: unknown) {
+  return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
+}
+
+export async function startMcp() {
+  const server = new McpServer({ name: "vibe-launch", version: "0.1.0" });
+
+  server.tool(
+    "list_projects",
+    "列出所有可部署的项目和服务器（清单）",
+    async () => text({ servers: loadConfig().servers, projects: loadConfig().projects })
+  );
+
+  server.tool(
+    "deploy_project",
+    "部署指定项目：SSH 到它所在服务器，跑配置好的部署命令，再做健康检查。返回成功与否、输出、git 版本、健康检查结果。",
+    { project: z.string().describe("项目名，见 list_projects") },
+    async ({ project }) => {
+      const r = await deploy(loadConfig(), project);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "get_status",
+    "看项目当前状态：git 版本 + 容器状态 + 健康检查。省略 project 则看全部。",
+    { project: z.string().optional().describe("项目名；省略看全部") },
+    async ({ project }) => {
+      const c = loadConfig();
+      const names = project ? [project] : Object.keys(c.projects);
+      const out = [];
+      for (const n of names) out.push(await status(c, n));
+      return text(out);
+    }
+  );
+
+  server.tool(
+    "add_project",
+    "登记一个部署项目：部署到哪台服务器、用什么命令部署、容器名、健康检查 URL。",
+    {
+      name: z.string().describe("项目名"),
+      server: z.string().describe("部署到哪台服务器的别名（需先 onboard_server）"),
+      deploy: z.string().describe("部署命令（服务器上跑），如 'git pull && docker restart x'"),
+      dir: z.string().optional().describe("服务器上的工作目录"),
+      containers: z.array(z.string()).optional().describe("容器名列表"),
+      health: z.array(z.string()).optional().describe("健康检查 URL 列表"),
+    },
+    async ({ name, ...proj }) => {
+      const c = loadConfig();
+      addProject(c, name, proj);
+      const path = saveConfig(c);
+      return text({ ok: true, name, path });
+    }
+  );
+
+  server.tool(
+    "onboard_server",
+    "接入一台新服务器：自动把本地公钥装上去（之后免密 SSH）+ 可选创建部署用户 + 写进清单。",
+    {
+      alias: z.string().describe("给服务器起的别名"),
+      host: z.string().describe("IP/域名"),
+      user: z.string().default("root").describe("初次登录用户"),
+      password: z.string().optional().describe("初次登录密码（一次性装公钥用；不填则用现有 key）"),
+      port: z.number().optional().describe("SSH 端口，默认 22"),
+      deployUser: z.string().optional().describe("顺便创建的专用部署用户"),
+      auth: z.enum(["key", "password"]).optional().describe("认证方式：key=装钥匙免密(推荐)，password=存密码"),
+      note: z.string().optional().describe("备注，如 海外/国内"),
+    },
+    async (args) => {
+      const r = await onboard(args);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("vibe-launch MCP server 已启动 (stdio)");
+}
