@@ -4,12 +4,14 @@ import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
 import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
+import { setupGit } from "./core/setup-git.js";
+import { deviceLogin, clearToken, getStoredToken } from "./core/github-auth.js";
 
 const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.1.0")
+  .version("0.3.0")
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {
@@ -114,6 +116,53 @@ projectCmd
     });
     const path = saveConfig(c);
     console.log(`✅ 项目 ${name} 已登记 → ${opts.server}（写入 ${path}）`);
+  });
+
+program
+  .command("auth")
+  .description("用浏览器授权 GitHub（device flow），存 token 供 setup-git 用")
+  .option("--logout", "清除已存的 token")
+  .option("--status", "看当前是否已授权")
+  .action(async (opts) => {
+    if (opts.logout) {
+      clearToken();
+      console.log("已登出（token 已清除）");
+      return;
+    }
+    if (opts.status) {
+      console.log(getStoredToken() ? "✅ 已授权（本地存有 token）" : "未授权，运行 vibe-launch auth");
+      return;
+    }
+    await deviceLogin(["repo"], (s) => console.log(s));
+    console.log("✅ GitHub 授权成功，token 已保存到 ~/.vibe-launch/github-token.json");
+  });
+
+program
+  .command("setup-git <project>")
+  .description("把项目目录转成 git checkout：装 git + 生成 deploy key + 用 gh 自动加到 GitHub 仓库(只读) + 配好免密拉取")
+  .requiredOption("--repo <owner/repo>", "GitHub 仓库（owner/repo 或完整 git URL）")
+  .option("--branch <branch>", "分支", "main")
+  .option("--adopt", "目录非空且非 git 时，先备份再转换（用仓库覆盖被跟踪文件，保留未跟踪文件）")
+  .option("--gh <path>", "gh 可执行路径", "gh")
+  .option("--token <pat>", "GitHub PAT（替代 gh；需 repo / Administration:write 权限。也可设环境变量 GITHUB_TOKEN）")
+  .action(async (project: string, opts) => {
+    console.log(`==> setup-git ${project}（仓库 ${opts.repo}）…`);
+    const r = await setupGit(cfg(), {
+      project,
+      repo: opts.repo,
+      branch: opts.branch,
+      adopt: opts.adopt,
+      ghPath: opts.gh,
+      token: opts.token,
+    });
+    for (const s of r.steps) console.log(`  ${s}`);
+    if (r.success) {
+      console.log(`✅ ${project} 已就绪（git ${r.gitRev ?? "?"}）`);
+      console.log(`   现在把部署命令设成 'git pull && …'（project add --deploy）再 vibe-launch deploy`);
+    } else {
+      console.error(`❌ setup-git 失败：${r.error}`);
+      process.exitCode = 1;
+    }
   });
 
 program

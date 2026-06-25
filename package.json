@@ -1,32 +1,46 @@
 {
   "name": "vibe-launch",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "一键把 AI 写的项目部署到你的服务器 — 轻量、agentless、AI 可调用（MCP + CLI）的多服务器部署编排器",
   "type": "module",
   "bin": {
     "vibe-launch": "dist/cli.js",
     "vl": "dist/cli.js"
   },
-  "files": ["dist", "vibe-launch.example.yaml", "README.md"],
+  "files": [
+    "dist",
+    "vibe-launch.example.yaml",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/cli.ts mcp",
     "prepublishOnly": "npm run build"
   },
-  "keywords": ["deploy", "mcp", "ssh", "vibecoding", "ai", "cli", "devops"],
+  "keywords": [
+    "deploy",
+    "mcp",
+    "ssh",
+    "vibecoding",
+    "ai",
+    "cli",
+    "devops"
+  ],
   "license": "AGPL-3.0-only",
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "commander": "^12.1.0",
     "node-ssh": "^13.2.0",
     "yaml": "^2.5.0",
-    "commander": "^12.1.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
     "tsx": "^4.16.0",
-    "@types/node": "^20.14.0"
+    "typescript": "^5.5.0"
   }
 }

@@ -63,8 +63,50 @@ vibe-launch mcp
 |---|---|
 | `server add` | `onboard_server` |
 | `project add` | `add_project` |
+| `setup-git <项目>` | `setup_git` |
 | `deploy <项目>` | `deploy_project` |
 | `status [项目]` | `get_status` |
+
+## 让项目用 git 部署（一条命令搞定）
+
+想让服务器 `git pull` 拉私有仓库部署，难点是「服务器怎么有权限拉代码」。`setup-git` 一条命令全自动：
+
+```bash
+vibe-launch setup-git myapp --repo yourname/yourrepo
+```
+
+它会在服务器上：
+1. **装 git**（没有就自动装；老到 git 1.8/CentOS7 也兼容）
+2. **生成专用 deploy key**（每个项目一把，只读）
+3. **自动把 key 加到 GitHub 仓库的 Deploy Keys** —— 你不用手动碰 GitHub 设置
+4. **配好 ssh 别名 + remote**，免密拉取
+
+> **加 key 到 GitHub 需要授权**，三选一（自动选，优先级从上到下）：
+> - `vibe-launch auth` —— **浏览器点一下授权**（device flow，最省事，不用装 gh、不用手动建 token）
+> - 本地已登录的 `gh`（零配置）
+> - `--token <PAT>` 或环境变量 `GITHUB_TOKEN`（需 `repo` / `Administration:write` 权限）
+
+### 浏览器授权（device flow）
+
+```bash
+vibe-launch auth          # 弹出"打开链接 + 输入码"，授权后存 token 本地
+vibe-launch auth --status # 看是否已授权
+vibe-launch auth --logout # 清除 token
+```
+
+纯本地、无后端、无 secret —— 同 `gh auth login` 的机制。
+
+> 三种 key 各司其职、互不相干：① 你本地连服务器的 SSH key　② 你本地推代码到 GitHub 的认证（`gh`）　③ 服务器拉代码的 deploy key（这条命令自动配的）。
+
+之后把部署命令设成 `git pull && ...` 即可：
+
+```bash
+vibe-launch project add myapp --server prod --dir /path/to/app \
+  --deploy "git pull && docker restart myapp-api myapp-web"
+vibe-launch deploy myapp
+```
+
+目录已经有手写代码（非 git）？加 `--adopt`，它会**先备份**再转成 git checkout（用仓库覆盖被跟踪文件，保留 `.env`/构建产物等未跟踪文件）。
 
 ## 设计原则
 

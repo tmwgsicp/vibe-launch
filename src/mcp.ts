@@ -6,13 +6,14 @@ import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
 import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
+import { setupGit } from "./core/setup-git.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
 }
 
 export async function startMcp() {
-  const server = new McpServer({ name: "vibe-launch", version: "0.1.0" });
+  const server = new McpServer({ name: "vibe-launch", version: "0.3.0" });
 
   server.tool(
     "list_projects",
@@ -77,6 +78,28 @@ export async function startMcp() {
     },
     async (args) => {
       const r = await onboard(args);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "setup_git",
+    "把项目目录在服务器上转成 git checkout：装 git + 生成专用 deploy key + 用本地 gh 把 key 加到 GitHub 仓库(只读) + 配好免密拉取。之后该项目就能 git pull 部署。需要项目已配 dir，且本地 gh 已登录。",
+    {
+      project: z.string().describe("项目名（需先 add_project 且配了 dir）"),
+      repo: z.string().describe("GitHub 仓库：owner/repo 或完整 git URL"),
+      branch: z.string().optional().describe("分支，默认 main"),
+      adopt: z
+        .boolean()
+        .optional()
+        .describe("目录非空且非 git 时先备份再转换（用仓库覆盖被跟踪文件，保留 .env/.output 等未跟踪文件）"),
+      token: z
+        .string()
+        .optional()
+        .describe("GitHub PAT（替代 gh；需 repo / Administration:write 权限。也可设环境变量 GITHUB_TOKEN）"),
+    },
+    async ({ project, repo, branch, adopt, token }) => {
+      const r = await setupGit(loadConfig(), { project, repo, branch, adopt, token });
       return { ...text(r), isError: !r.success };
     }
   );
