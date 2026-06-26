@@ -108,6 +108,18 @@ vibe-launch deploy myapp
 
 目录已经有手写代码（非 git）？加 `--adopt`，它会**先备份**再转成 git checkout（用仓库覆盖被跟踪文件，保留 `.env`/构建产物等未跟踪文件）。
 
+## 安全访问：SSH 隧道（免开公网 DB 端口）
+
+数据库/缓存**不该暴露在公网**。生产让 app 走内网容器访问 PG/Redis；你本地开发要连库时，用隧道：
+
+```bash
+vibe-launch tunnel prod --service pg      # 本地 localhost:5432 → 服务器内网 PG
+vibe-launch tunnel prod --service redis   # 本地 localhost:6379 → 服务器内网 Redis
+vibe-launch tunnel prod --remote-port 8001 --local-port 18001   # 任意端口
+```
+
+走的是已有的 SSH 端口（key 加密）。你的 DB 工具连 `localhost` 即可，**服务器上 PG/Redis 的公网端口可以彻底关闭**，攻击面大降。`Ctrl+C` 关闭隧道。
+
 ## 设计原则
 
 - **不做 1Panel/k8s 已经做好的事**：不跑容器、不管数据库、不反代、不 build 镜像

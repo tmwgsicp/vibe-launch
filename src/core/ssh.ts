@@ -28,12 +28,8 @@ export interface ExecResult {
   stderr: string;
 }
 
-/** 在服务器上跑一条命令（可指定 cwd） */
-export async function runOnServer(
-  server: ServerConfig,
-  command: string,
-  cwd?: string
-): Promise<ExecResult> {
+/** 用 server 的认证(密码/专用 key/agent)建立 SSH 连接。runOnServer / tunnel 共用。 */
+export async function connectSSH(server: ServerConfig): Promise<NodeSSH> {
   const ssh = new NodeSSH();
   // 认证方式：配了密码用密码，否则用 key（专用 key / ~/.ssh / agent）
   const auth = server.password
@@ -49,6 +45,16 @@ export async function runOnServer(
     ...auth,
     readyTimeout: 20000,
   });
+  return ssh;
+}
+
+/** 在服务器上跑一条命令（可指定 cwd） */
+export async function runOnServer(
+  server: ServerConfig,
+  command: string,
+  cwd?: string
+): Promise<ExecResult> {
+  const ssh = await connectSSH(server);
   try {
     const res = await ssh.execCommand(command, cwd ? { cwd } : {});
     return { code: res.code, stdout: res.stdout, stderr: res.stderr };

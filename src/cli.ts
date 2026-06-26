@@ -6,12 +6,13 @@ import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
 import { deviceLogin, clearToken, getStoredToken } from "./core/github-auth.js";
+import { openTunnel } from "./core/tunnel.js";
 
 const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.3.0")
+  .version("0.4.0")
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {
@@ -161,6 +162,32 @@ program
       console.log(`   现在把部署命令设成 'git pull && …'（project add --deploy）再 vibe-launch deploy`);
     } else {
       console.error(`❌ setup-git 失败：${r.error}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("tunnel <target>")
+  .description("开 SSH 隧道：把服务器内网服务(PG/Redis…)映射到本地，免开公网端口")
+  .option("--service <name>", "服务预设：pg(5432) / redis(6379) / mysql(3306)")
+  .option("--remote-host <host>", "服务器侧目标地址（默认 127.0.0.1）")
+  .option("--remote-port <port>", "服务器侧目标端口（不填则由 --service 推断）")
+  .option("--local-port <port>", "本地监听端口（默认 = 远程端口）")
+  .action(async (target: string, opts) => {
+    try {
+      await openTunnel(
+        cfg(),
+        {
+          target,
+          service: opts.service,
+          remoteHost: opts.remoteHost,
+          remotePort: opts.remotePort ? Number(opts.remotePort) : undefined,
+          localPort: opts.localPort ? Number(opts.localPort) : undefined,
+        },
+        (s) => console.log(s)
+      );
+    } catch (e) {
+      console.error(`❌ 隧道失败：${(e as Error).message}`);
       process.exitCode = 1;
     }
   });

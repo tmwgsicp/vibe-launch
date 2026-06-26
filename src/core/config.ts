@@ -83,3 +83,12 @@ export function getProject(config: Config, name: string) {
   }
   return { project: proj, server: config.servers[proj.server], serverName: proj.server };
 }
+
+/** 把"服务器别名或项目名"解析成 ServerConfig（tunnel 等用）。 */
+export function getServerOf(config: Config, target: string) {
+  if (config.servers[target]) return config.servers[target];
+  const proj = config.projects[target];
+  if (proj && config.servers[proj.server]) return config.servers[proj.server];
+  const servers = Object.keys(config.servers).join(", ") || "(无)";
+  throw new Error(`找不到服务器/项目 "${target}"。已配置服务器: ${servers}`);
+}
