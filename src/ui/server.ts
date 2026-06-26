@@ -1,0 +1,373 @@
+// vibe-launch 本地可视化操作台后端：Node http + 复用 core 函数暴露 JSON API，
+// 服务内嵌的单页前端。纯本地、无账号、只监听 127.0.0.1。
+import * as http from "node:http";
+import { execFile } from "node:child_process";
+import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject } from "../core/config.js";
+import { deploy } from "../core/deploy.js";
+import { status } from "../core/status.js";
+import { onboard } from "../core/onboard.js";
+import { setupGit } from "../core/setup-git.js";
+import { getServerStats } from "../core/serverstats.js";
+import { runOnServer, connectSSH } from "../core/ssh.js";
+import { createTunnel, type TunnelHandle } from "../core/tunnel.js";
+import { recordDeploy, getHistory } from "../core/history.js";
+import { preDeploy } from "../core/predeploy.js";
+import { rollback } from "../core/rollback.js";
+import { checkExposure } from "../core/portcheck.js";
+import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
+import { listContainers, removeContainer, pruneContainers } from "../core/containers.js";
+import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
+import { INDEX_HTML } from "./index-html.js";
+
+// UI 进程内管理的活跃隧道（id -> 句柄）
+const TUNNELS = new Map<string, TunnelHandle>();
+
+function json(res: http.ServerResponse, code: number, obj: unknown): void {
+  res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(obj));
+}
+
+async function readBody(req: http.IncomingMessage): Promise<any> {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  const s = Buffer.concat(chunks).toString("utf8");
+  return s ? JSON.parse(s) : {};
+}
+
+function tryOpen(url: string): void {
+  try {
+    if (process.platform === "win32") execFile("cmd", ["/c", "start", "", url], () => {});
+    else if (process.platform === "darwin") execFile("open", [url], () => {});
+    else execFile("xdg-open", [url], () => {});
+  } catch {
+    /* 非致命 */
+  }
+}
+
+export async function startUi(port = 7777, open = true): Promise<void> {
+  const server = http.createServer(async (req, res) => {
+    const path = new URL(req.url || "/", `http://localhost:${port}`).pathname;
+    const q = new URL(req.url || "/", `http://localhost:${port}`).searchParams;
+    try {
+      // 静态首页
+      if (path === "/" || path === "/index.html") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(INDEX_HTML);
+        return;
+      }
+      // 清单
+      if (path === "/api/config" && req.method === "GET") {
+        const c = loadConfig();
+        return json(res, 200, { servers: c.servers, projects: c.projects, _path: getConfigPath() });
+      }
+      // MCP 能力信息（给 AI 客户端接入用）
+      if (path === "/api/mcp-info" && req.method === "GET") {
+        return json(res, 200, {
+          tools: [
+            { name: "list_projects", desc: "列出所有服务器和可部署项目" },
+            { name: "get_status", desc: "看项目状态：git 版本 + 容器 + 健康检查" },
+            { name: "deploy_project", desc: "部署项目：SSH 跑部署命令 + 健康检查" },
+            { name: "add_project", desc: "登记一个部署项目" },
+            { name: "onboard_server", desc: "接入新服务器：自动装公钥免密" },
+            { name: "setup_git", desc: "把项目转成 git checkout + 配 deploy key" },
+          ],
+          config: { mcpServers: { "vibe-launch": { command: "vibe-launch", args: ["mcp"] } } },
+          configNpx: { mcpServers: { "vibe-launch": { command: "npx", args: ["-y", "vibe-launch", "mcp"] } } },
+        });
+      }
+      // 状态
+      if (path === "/api/status" && req.method === "GET") {
+        const c = loadConfig();
+        const proj = q.get("project");
+        const names = proj ? [proj] : Object.keys(c.projects);
+        // 并行 + 单项隔离：一个项目连不上/超时不再拖垮整个状态接口（旧的 for-await 串行会被卡死的项目吊死）
+        const settled = await Promise.allSettled(names.map((n) => status(c, n)));
+        const out = settled.map((r, i) =>
+          r.status === "fulfilled"
+            ? r.value
+            : { project: names[i], reachable: false, error: String((r.reason && r.reason.message) || r.reason) }
+        );
+        return json(res, 200, out);
+      }
+      // 服务器指标（CPU/内存/磁盘/容器）
+      if (path === "/api/server-stats" && req.method === "GET") {
+        const c = loadConfig();
+        const name = q.get("server");
+        if (!name || !c.servers[name]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await getServerStats(c.servers[name]));
+      }
+      // 部署（记历史）
+      if (path.startsWith("/api/deploy/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/deploy/".length));
+        const r = await deploy(loadConfig(), name);
+        recordDeploy({ project: name, ts: Date.now(), success: r.success, gitRev: r.gitRev, error: r.error });
+        return json(res, 200, r);
+      }
+      // 部署历史
+      if (path === "/api/history" && req.method === "GET") {
+        return json(res, 200, getHistory(q.get("project") || undefined, 20));
+      }
+      // 回滚到指定版本
+      if (path.startsWith("/api/rollback/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/rollback/".length));
+        const b = await readBody(req);
+        const r = await rollback(loadConfig(), name, b.rev);
+        recordDeploy({ project: name, ts: Date.now(), success: r.success, gitRev: r.gitRev, error: r.error, action: "rollback" });
+        return json(res, 200, r);
+      }
+      // 部署前预览：将拉取的新提交
+      if (path === "/api/predeploy" && req.method === "GET") {
+        const name = q.get("project");
+        if (!name) return json(res, 400, { error: "需要 project" });
+        return json(res, 200, await preDeploy(loadConfig(), name));
+      }
+      // 浏览服务器目录（选部署目录用）
+      if (path === "/api/browse" && req.method === "GET") {
+        const c = loadConfig();
+        const sv = q.get("server");
+        if (!sv) return json(res, 400, { error: "需要 server" });
+        return json(res, 200, await browseDirs(c, sv, q.get("path") || undefined));
+      }
+      // 项目目录浏览（根锁在 project.dir，可进子目录）
+      if (path === "/api/project-dir" && req.method === "GET") {
+        const name = q.get("project");
+        if (!name) return json(res, 400, { error: "需要 project" });
+        return json(res, 200, await listProjectDir(loadConfig(), name, q.get("rel") || undefined));
+      }
+      // 上传文件（二进制安全，收 base64）到项目目录树内
+      if (path === "/api/project-upload" && req.method === "PUT") {
+        const b = await readBody(req);
+        if (!b.project || !b.name) return json(res, 400, { error: "需要 project + name" });
+        return json(res, 200, await writeProjectFileBase64(loadConfig(), b.project, b.name, b.b64 || ""));
+      }
+      // 项目目录内的文件：读 / 写（约束在项目 dir 树内）
+      if (path === "/api/project-file" && req.method === "GET") {
+        const name = q.get("project"), file = q.get("name");
+        if (!name || !file) return json(res, 400, { error: "需要 project + name" });
+        return json(res, 200, await readProjectFile(loadConfig(), name, file));
+      }
+      if (path === "/api/project-file" && req.method === "PUT") {
+        const b = await readBody(req);
+        if (!b.project || !b.name) return json(res, 400, { error: "需要 project + name" });
+        return json(res, 200, await writeProjectFile(loadConfig(), b.project, b.name, b.content || ""));
+      }
+      // 数据库端口暴露检测
+      if (path === "/api/port-exposure" && req.method === "GET") {
+        const c = loadConfig();
+        const name = q.get("server");
+        if (!name || !c.servers[name]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await checkExposure(c, name));
+      }
+      // 容器日志
+      if (path === "/api/container-logs" && req.method === "GET") {
+        const c = loadConfig();
+        const sv = q.get("server"), ct = q.get("container"), tail = parseInt(q.get("tail") || "120", 10) || 120;
+        if (!sv || !c.servers[sv] || !ct) return json(res, 400, { error: "需要 server + container" });
+        const r = await runOnServer(c.servers[sv], `docker logs --tail ${tail} --timestamps ${JSON.stringify(ct)} 2>&1 | tail -2000`);
+        return json(res, 200, { logs: r.stdout || r.stderr || "(无输出)" });
+      }
+      // 容器日志：实时流（SSE，docker logs -f 经 SSH exec 推送）
+      if (path === "/api/container-logs/stream" && req.method === "GET") {
+        const c = loadConfig();
+        const sv = q.get("server"), ct = q.get("container"), tail = parseInt(q.get("tail") || "200", 10) || 200;
+        if (!sv || !c.servers[sv] || !ct) return json(res, 400, { error: "需要 server + container" });
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        });
+        const ssh = await connectSSH(c.servers[sv]);
+        const conn = (ssh as any).connection;
+        const send = (chunk: Buffer) => {
+          for (const line of chunk.toString("utf8").split(/\r?\n/)) {
+            if (line.length) res.write(`data: ${line.replace(/\r/g, "")}\n\n`);
+          }
+        };
+        const cleanup = () => { try { ssh.dispose(); } catch { /* ignore */ } };
+        conn.exec(
+          `docker logs -f --tail ${tail} --timestamps ${JSON.stringify(ct)} 2>&1`,
+          (err: Error | undefined, stream: any) => {
+            if (err) { res.write(`data: [错误] ${err.message}\n\n`); res.end(); cleanup(); return; }
+            stream.on("data", send);
+            stream.stderr.on("data", send);
+            stream.on("close", () => { res.end(); cleanup(); });
+          }
+        );
+        req.on("close", () => { try { conn.end(); } catch { /* ignore */ } cleanup(); });
+        return;
+      }
+      // 容器重启
+      if (path === "/api/container-restart" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.container) return json(res, 400, { error: "需要 server + container" });
+        const r = await runOnServer(c.servers[b.server], `docker restart ${JSON.stringify(b.container)}`);
+        return json(res, r.code === 0 ? 200 : 500, { ok: r.code === 0, output: (r.stdout || r.stderr).trim() });
+      }
+      // 容器列表（含已停止）
+      if (path === "/api/containers" && req.method === "GET") {
+        const c = loadConfig();
+        const sv = q.get("server");
+        if (!sv || !c.servers[sv]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await listContainers(c, sv));
+      }
+      // 删除单个容器（不强删运行中的）
+      if (path === "/api/container-remove" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.container) return json(res, 400, { error: "需要 server + container" });
+        return json(res, 200, await removeContainer(c, b.server, b.container));
+      }
+      // 一键清理已停止容器
+      if (path === "/api/container-prune" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server]) return json(res, 400, { error: "需要 server" });
+        return json(res, 200, await pruneContainers(c, b.server));
+      }
+      // ── 通用文件管理（server + 绝对路径）──
+      if (path === "/api/fs/list" && req.method === "GET") {
+        const c = loadConfig(), sv = q.get("server");
+        if (!sv || !c.servers[sv]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await fsList(c, sv, q.get("path") || undefined));
+      }
+      if (path === "/api/fs/read" && req.method === "GET") {
+        const c = loadConfig(), sv = q.get("server"), p = q.get("path");
+        if (!sv || !c.servers[sv] || !p) return json(res, 400, { error: "需要 server + path" });
+        return json(res, 200, await fsRead(c, sv, p));
+      }
+      if (path === "/api/fs/download" && req.method === "GET") {
+        const c = loadConfig(), sv = q.get("server"), p = q.get("path");
+        if (!sv || !c.servers[sv] || !p) return json(res, 400, { error: "需要 server + path" });
+        return json(res, 200, await fsDownload(c, sv, p));
+      }
+      if (path === "/api/fs/write" && req.method === "PUT") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.path) return json(res, 400, { error: "需要 server + path" });
+        return json(res, 200, await fsWriteB64(c, b.server, b.path, b.b64 || ""));
+      }
+      if (path === "/api/fs/delete" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.path) return json(res, 400, { error: "需要 server + path" });
+        return json(res, 200, await fsDelete(c, b.server, b.path));
+      }
+      if (path === "/api/fs/rename" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.path || !b.dest) return json(res, 400, { error: "需要 server + path + dest" });
+        return json(res, 200, await fsRename(c, b.server, b.path, b.dest));
+      }
+      if (path === "/api/fs/mkdir" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.path) return json(res, 400, { error: "需要 server + path" });
+        return json(res, 200, await fsMkdir(c, b.server, b.path));
+      }
+      // 隧道：列表 / 开 / 关（UI 进程内管理）
+      if (path === "/api/tunnels" && req.method === "GET") {
+        return json(res, 200, [...TUNNELS.entries()].map(([id, t]) => ({
+          id, target: t.target, service: t.service, localPort: t.localPort,
+          remoteHost: t.remoteHost, remotePort: t.remotePort, serverHost: t.serverHost,
+        })));
+      }
+      if (path === "/api/tunnel/start" && req.method === "POST") {
+        const b = await readBody(req);
+        const h = await createTunnel(loadConfig(), {
+          target: b.target, service: b.service, remoteHost: b.remoteHost,
+          remotePort: b.remotePort, localPort: b.localPort,
+        });
+        const id = `${b.target}:${h.localPort}`;
+        TUNNELS.set(id, h);
+        return json(res, 200, { id, localPort: h.localPort, remoteHost: h.remoteHost, remotePort: h.remotePort });
+      }
+      if (path === "/api/tunnel/stop" && req.method === "POST") {
+        const b = await readBody(req), t = TUNNELS.get(b.id);
+        if (t) { t.close(); TUNNELS.delete(b.id); }
+        return json(res, 200, { ok: true });
+      }
+      // 接入服务器
+      if (path === "/api/server" && req.method === "POST") {
+        const b = await readBody(req);
+        const r = await onboard(b);
+        return json(res, 200, r);
+      }
+      // 编辑服务器（改备注/字段/别名，别名变更级联项目）
+      if (path.startsWith("/api/server/") && req.method === "PATCH") {
+        const name = decodeURIComponent(path.slice("/api/server/".length));
+        const b = await readBody(req);
+        const c = loadConfig();
+        updateServer(c, name, {
+          host: b.host, user: b.user, port: b.port, note: b.note, identityFile: b.identityFile,
+        }, b.newName);
+        const p = saveConfig(c);
+        return json(res, 200, { ok: true, path: p });
+      }
+      // 删除服务器
+      if (path.startsWith("/api/server/") && req.method === "DELETE") {
+        const name = decodeURIComponent(path.slice("/api/server/".length));
+        const c = loadConfig();
+        removeServer(c, name);
+        return json(res, 200, { ok: true, path: saveConfig(c) });
+      }
+      // 编辑项目
+      if (path.startsWith("/api/project/") && req.method === "PATCH") {
+        const name = decodeURIComponent(path.slice("/api/project/".length));
+        const b = await readBody(req);
+        const c = loadConfig();
+        updateProject(c, name, {
+          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, health: b.health,
+        }, b.newName);
+        return json(res, 200, { ok: true, path: saveConfig(c) });
+      }
+      // 删除项目
+      if (path.startsWith("/api/project/") && req.method === "DELETE") {
+        const name = decodeURIComponent(path.slice("/api/project/".length));
+        const c = loadConfig();
+        removeProject(c, name);
+        return json(res, 200, { ok: true, path: saveConfig(c) });
+      }
+      // 登记项目
+      if (path === "/api/project" && req.method === "POST") {
+        const b = await readBody(req);
+        const c = loadConfig();
+        addProject(c, b.name, {
+          server: b.server,
+          dir: b.dir,
+          deploy: b.deploy,
+          containers: b.containers,
+          health: b.health,
+        });
+        const p = saveConfig(c);
+        return json(res, 200, { ok: true, path: p });
+      }
+      // 转 git checkout
+      if (path.startsWith("/api/setup-git/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/setup-git/".length));
+        const b = await readBody(req);
+        const r = await setupGit(loadConfig(), {
+          project: name,
+          repo: b.repo,
+          branch: b.branch,
+          adopt: b.adopt,
+          token: b.token,
+        });
+        return json(res, 200, r);
+      }
+      json(res, 404, { error: "not found" });
+    } catch (e) {
+      json(res, 500, { error: (e as Error).message });
+    }
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => resolve());
+  });
+
+  const url = `http://localhost:${port}`;
+  console.log(`🚀 vibe-launch 操作台：${url}`);
+  console.log(`   纯本地、只监听 127.0.0.1。Ctrl+C 关闭。`);
+  if (open) tryOpen(url);
+
+  await new Promise<void>((resolve) => {
+    process.once("SIGINT", () => {
+      server.close();
+      resolve();
+    });
+  });
+}

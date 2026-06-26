@@ -161,9 +161,12 @@ export async function setupGit(config: Config, opts: SetupGitOptions): Promise<S
       steps.push("服务器没 git，安装中…");
       await run(
         "(command -v apt-get >/dev/null && sudo apt-get update -qq && sudo apt-get install -y -qq git) || " +
+          "(command -v dnf >/dev/null && sudo dnf install -y -q git) || " +
           "(command -v yum >/dev/null && sudo yum install -y -q git) || " +
+          "(command -v zypper >/dev/null && sudo zypper -n install git) || " +
           "(command -v apk >/dev/null && sudo apk add --no-progress git) || " +
-          "{ echo '无法自动安装 git'; exit 1; }",
+          "(command -v pacman >/dev/null && sudo pacman -Sy --noconfirm git) || " +
+          "{ echo '无法自动安装 git（不认识的包管理器，请手动装 git）'; exit 1; }",
         "装 git"
       );
       steps.push("✓ git 已安装");

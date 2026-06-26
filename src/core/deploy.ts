@@ -44,7 +44,17 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
     }
 
     result.success = allOk;
-    if (!allOk) result.error = "部署命令成功，但健康检查未通过";
+    if (!allOk) {
+      result.error = "部署命令成功，但健康检查未通过";
+      // 健康检查红了，自动把相关容器尾部日志抓出来，省去手点
+      if (project.containers?.length) {
+        result.failLogs = [];
+        for (const name of project.containers) {
+          const r = await runOnServer(server, `docker logs --tail 50 --timestamps ${JSON.stringify(name)} 2>&1 | tail -50`);
+          result.failLogs.push({ container: name, logs: (r.stdout || r.stderr || "").trim() });
+        }
+      }
+    }
     return result;
   } catch (e) {
     result.error = (e as Error).message;

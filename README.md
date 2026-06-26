@@ -24,6 +24,7 @@
 - 🔌 **部署机制可插拔**：每个项目自配部署命令（`git pull && docker restart` / `docker compose up` / 任意脚本）—— 不锁 1Panel/GitHub
 - 🤖 **AI 原生**：MCP 让 Claude Code / Cursor / Codex 直接调用；CLI 给终端和自动化
 - 🔑 **SSH 全自动**：一条命令自动生成专用 key、装到服务器、之后免密 —— 不用你手搓 ssh-keygen
+- 🖥️ **可视化操作台**：`vibe-launch ui` 浏览器里看状态、一键部署、接入服务器、登记项目 —— 纯本地
 
 ## 安装
 
@@ -48,6 +49,14 @@ vibe-launch project add myapp --server prod \
 vibe-launch deploy myapp
 vibe-launch status
 ```
+
+## 可视化操作台
+
+```bash
+vibe-launch ui          # 起本地操作台 + 自动开浏览器（localhost:7777）
+```
+
+浏览器里：服务器/项目卡片（git 版本 + 容器状态 + 健康检查）、**一键部署**（带实时输出）、刷新状态、接入新服务器、登记项目 —— 全可视化点操作。纯本地、只监听 `127.0.0.1`、无需账号。
 
 ## 给 AI 工具用（MCP）
 

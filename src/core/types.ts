@@ -38,6 +38,8 @@ export interface DeployResult {
   output: string;
   gitRev?: string;
   health: { url: string; httpCode: string; ok: boolean }[];
+  /** 健康检查失败时自动抓的容器尾部日志，方便直接定位 */
+  failLogs?: { container: string; logs: string }[];
   error?: string;
 }
 
@@ -45,6 +47,8 @@ export interface StatusResult {
   project: string;
   server: string;
   gitRev?: string;
+  gitBranch?: string;
+  gitRepo?: string; // origin remote URL（无则说明非 git 接管）
   containers: { name: string; state: string }[];
   health: { url: string; httpCode: string; ok: boolean }[];
   reachable: boolean;

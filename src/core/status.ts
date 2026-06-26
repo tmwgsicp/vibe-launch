@@ -14,10 +14,20 @@ export async function status(config: Config, projectName: string): Promise<Statu
   };
 
   try {
-    // git 版本
+    // git 版本 + 分支 + 仓库（一次 SSH）
     if (project.dir) {
-      const rev = await runOnServer(server, `git -C ${JSON.stringify(project.dir)} rev-parse --short HEAD 2>/dev/null || true`);
-      result.gitRev = rev.stdout.trim() || undefined;
+      const g = await runOnServer(
+        server,
+        `cd ${JSON.stringify(project.dir)} 2>/dev/null && ` +
+          `{ echo "H:$(git rev-parse --short HEAD 2>/dev/null)"; ` +
+          `echo "B:$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
+          `echo "R:$(git remote get-url origin 2>/dev/null)"; } || true`
+      );
+      for (const line of g.stdout.split("\n")) {
+        if (line.startsWith("H:")) result.gitRev = line.slice(2).trim() || undefined;
+        else if (line.startsWith("B:")) result.gitBranch = line.slice(2).trim() || undefined;
+        else if (line.startsWith("R:")) result.gitRepo = line.slice(2).trim() || undefined;
+      }
     }
     result.reachable = true;
 

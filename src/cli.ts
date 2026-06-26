@@ -12,7 +12,7 @@ const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.4.0")
+  .version("0.5.0")
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {
@@ -190,6 +190,16 @@ program
       console.error(`❌ 隧道失败：${(e as Error).message}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("ui")
+  .description("启动本地可视化操作台（浏览器里看状态 + 部署/接入/登记，纯本地）")
+  .option("--port <port>", "监听端口", "7777")
+  .option("--no-open", "不自动打开浏览器")
+  .action(async (opts) => {
+    const { startUi } = await import("./ui/server.js");
+    await startUi(Number(opts.port) || 7777, opts.open !== false);
   });
 
 program

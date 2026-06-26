@@ -75,6 +75,68 @@ export function addProject(config: Config, name: string, proj: ProjectConfig): v
   config.projects[name] = proj;
 }
 
+/** 编辑服务器：改字段 + 可选改别名（改名会级联更新引用它的项目）。 */
+export function updateServer(
+  config: Config,
+  name: string,
+  patch: Partial<import("./types.js").ServerConfig>,
+  newName?: string
+): void {
+  const cur = config.servers[name];
+  if (!cur) throw new Error(`服务器 "${name}" 不存在`);
+  // 只应用"有传值"的字段，避免 undefined 把现有值(如 identityFile)冲掉
+  const merged = { ...cur };
+  for (const [kk, vv] of Object.entries(patch)) if (vv !== undefined) (merged as Record<string, unknown>)[kk] = vv;
+  // 清掉空字符串字段，避免写一堆空值进 yaml
+  for (const k of ["note", "identityFile", "password"] as const) {
+    if (merged[k] === "" || merged[k] == null) delete (merged as Record<string, unknown>)[k];
+  }
+  const target = (newName || name).trim();
+  if (target !== name) {
+    if (config.servers[target]) throw new Error(`别名 "${target}" 已被占用`);
+    delete config.servers[name];
+    // 级联：所有引用旧别名的项目改指向新别名
+    for (const p of Object.values(config.projects)) if (p.server === name) p.server = target;
+  }
+  config.servers[target] = merged;
+}
+
+/** 删除服务器：若仍有项目引用则拒绝（避免悬空引用）。 */
+export function removeServer(config: Config, name: string): void {
+  if (!config.servers[name]) throw new Error(`服务器 "${name}" 不存在`);
+  const used = Object.entries(config.projects).filter(([, p]) => p.server === name).map(([n]) => n);
+  if (used.length) throw new Error(`还有项目引用这台服务器：${used.join(", ")}。请先删除/改派这些项目`);
+  delete config.servers[name];
+}
+
+/** 编辑项目：改字段 + 可选改名。 */
+export function updateProject(
+  config: Config,
+  name: string,
+  patch: Partial<ProjectConfig>,
+  newName?: string
+): void {
+  const cur = config.projects[name];
+  if (!cur) throw new Error(`项目 "${name}" 不存在`);
+  const merged = { ...cur };
+  for (const [kk, vv] of Object.entries(patch)) if (vv !== undefined) (merged as Record<string, unknown>)[kk] = vv;
+  if (merged.server && !config.servers[merged.server]) throw new Error(`server "${merged.server}" 不存在`);
+  for (const k of ["dir"] as const) {
+    if (merged[k] === "" || merged[k] == null) delete (merged as Record<string, unknown>)[k];
+  }
+  const target = (newName || name).trim();
+  if (target !== name) {
+    if (config.projects[target]) throw new Error(`项目名 "${target}" 已被占用`);
+    delete config.projects[name];
+  }
+  config.projects[target] = merged;
+}
+
+export function removeProject(config: Config, name: string): void {
+  if (!config.projects[name]) throw new Error(`项目 "${name}" 不存在`);
+  delete config.projects[name];
+}
+
 export function getProject(config: Config, name: string) {
   const proj = config.projects[name];
   if (!proj) {
