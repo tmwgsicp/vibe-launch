@@ -61,6 +61,15 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
       result.error = "部署命令成功，但健康检查未通过";
       // 健康红了，自动抓容器状态+日志（多半是容器退出/端口没起/连不上依赖）
       if (project.containers?.length) result.failLogs = await gatherDiag(server, project.containers);
+    } else if (project.containers?.length) {
+      // 健康过了也扫一眼日志：健康端点 200 ≠ 应用没坏（如某些页面模板 500、连接异常）
+      const warns: { container: string; sample: string }[] = [];
+      for (const name of project.containers) {
+        const r = await runOnServer(server, `docker logs --tail 40 ${JSON.stringify(name)} 2>&1 | grep -iE 'traceback|exception|critical|gaierror|errno|raise [A-Z]' | tail -3`);
+        const hit = (r.stdout || "").trim();
+        if (hit) warns.push({ container: name, sample: hit.slice(0, 600) });
+      }
+      if (warns.length) result.warnings = warns;
     }
     return result;
   } catch (e) {

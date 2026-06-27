@@ -42,6 +42,8 @@ export interface DeployResult {
   health: { url: string; httpCode: string; ok: boolean }[];
   /** 部署失败时自动抓的容器状态 + 尾部日志，让失败自解释（命令失败/健康失败都带） */
   failLogs?: { container: string; state?: string; logs: string }[];
+  /** 部署"成功"但日志里发现疑似报错（健康端点过了≠应用没坏，比如模板 500/连接异常） */
+  warnings?: { container: string; sample: string }[];
   error?: string;
 }
 
