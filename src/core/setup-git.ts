@@ -242,9 +242,14 @@ export async function setupGit(config: Config, opts: SetupGitOptions): Promise<S
       await run(`cp -a ${q(dir)} ${q(dir)}.vibe-launch-bak.$(date +%s)`, "备份原目录");
       steps.push(`✓ 已备份原目录（${dir}.vibe-launch-bak.*）`);
       await run(
+        // 用显式 refspec 建 origin/<branch> 跟踪 ref（`git fetch origin main` 只写 FETCH_HEAD、不建 origin/main）；
+        // symbolic-ref + config 全老 git 兼容，并配好 upstream 让后续 git pull 正常。
         `cd ${q(dir)} && git init -q && ` +
           `(git remote add origin ${q(aliasUrl)} 2>/dev/null || git remote set-url origin ${q(aliasUrl)}) && ` +
-          `git fetch origin ${q(branch)} && git reset --hard origin/${branch}`,
+          `git fetch origin ${q(branch)}:refs/remotes/origin/${branch} && ` +
+          `git symbolic-ref HEAD refs/heads/${branch} && ` +
+          `git reset --hard origin/${branch} && ` +
+          `git config branch.${branch}.remote origin && git config branch.${branch}.merge refs/heads/${branch}`,
         "init + fetch + reset"
       );
       steps.push("✓ 已转成 git checkout（原内容已备份，未跟踪文件保留）");
