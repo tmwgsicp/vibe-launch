@@ -79,6 +79,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             { name: "list_containers", desc: "列出容器含已停止（只读）" },
             { name: "check_ports", desc: "数据库端口暴露检测（只读诊断）" },
             { name: "run_command", desc: "在服务器跑任意命令（AI 灵活部署的万能原语）" },
+            { name: "suggest_deploy", desc: "探测项目类型，给出推荐壳子部署命令（脚手架）" },
           ],
           config: { mcpServers: { "vibe-launch": { command: "vibe-launch", args: ["mcp"] } } },
           configNpx: { mcpServers: { "vibe-launch": { command: "npx", args: ["-y", "vibe-launch", "mcp"] } } },

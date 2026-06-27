@@ -40,8 +40,8 @@ export interface DeployResult {
   output: string;
   gitRev?: string;
   health: { url: string; httpCode: string; ok: boolean }[];
-  /** 健康检查失败时自动抓的容器尾部日志，方便直接定位 */
-  failLogs?: { container: string; logs: string }[];
+  /** 部署失败时自动抓的容器状态 + 尾部日志，让失败自解释（命令失败/健康失败都带） */
+  failLogs?: { container: string; state?: string; logs: string }[];
   error?: string;
 }
 

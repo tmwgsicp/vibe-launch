@@ -14,6 +14,7 @@ import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
 import { listContainers, getContainerLogs } from "./core/containers.js";
 import { enableSshPool, runOnServer } from "./core/ssh.js";
+import { suggestDeploy } from "./core/scaffold.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
@@ -184,6 +185,23 @@ export async function startMcp() {
     { server: z.string().describe("服务器别名") },
     async ({ server }) => {
       try { return text(await checkExposure(loadConfig(), server)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "suggest_deploy",
+    "探测服务器上某目录的项目类型（VitePress / Nuxt / Next / Python / Node / 静态），返回推荐的「壳子」部署命令 + 端口 + 健康检查 + 注意事项。部署新项目前先用它拿起点，可改后传给 add_project。基础镜像复用，不 docker build/拉镜像。",
+    {
+      server: z.string().describe("服务器别名"),
+      dir: z.string().describe("服务器上的项目目录（已 clone/setup-git）"),
+      name: z.string().optional().describe("项目/容器名，默认 app"),
+      port: z.number().optional().describe("对外端口，默认 8080"),
+    },
+    async ({ server, dir, name, port }) => {
+      const c = loadConfig();
+      if (!c.servers[server]) return { ...text({ error: `服务器 ${server} 不存在` }), isError: true };
+      try { return text(await suggestDeploy(c, server, dir, name || "app", port || 8080)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
     }
   );

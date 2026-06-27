@@ -8,6 +8,7 @@ import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
 import { deviceLogin, clearToken, getStoredToken } from "./core/github-auth.js";
 import { openTunnel } from "./core/tunnel.js";
+import { suggestDeploy } from "./core/scaffold.js";
 
 const program = new Command();
 program
@@ -181,6 +182,18 @@ program
       console.error(`❌ setup-git 失败：${r.error}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("suggest <server> <dir>")
+  .description("探测目录的项目类型，给出推荐的壳子部署命令 + 端口 + 健康检查（部署新项目前用）")
+  .option("--name <name>", "项目/容器名", "app")
+  .option("--port <port>", "对外端口", "8080")
+  .action(async (server: string, dir: string, opts) => {
+    const r = await suggestDeploy(cfg(), server, dir, opts.name, Number(opts.port) || 8080);
+    console.log(`类型: ${r.type}  端口: ${r.port}  健康检查: ${r.health.join(", ") || "(无)"}`);
+    console.log(`\n推荐部署命令:\n  ${r.deploy || "(未识别)"}`);
+    if (r.notes.length) { console.log("\n说明:"); for (const n of r.notes) console.log("  · " + n); }
   });
 
 program

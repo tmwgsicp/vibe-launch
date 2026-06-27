@@ -8,6 +8,17 @@ function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n…(已截断 ${s.length - n} 字)` : s;
 }
 
+// 部署失败时，把每个相关容器的状态 + 尾部日志抓出来，让失败自解释（不用 AI/人再翻 docker）。
+async function gatherDiag(server: import("./types.js").ServerConfig, containers: string[]) {
+  const out: { container: string; state?: string; logs: string }[] = [];
+  for (const name of containers) {
+    const st = await runOnServer(server, `docker inspect -f '{{.State.Status}} (exit {{.State.ExitCode}})' ${JSON.stringify(name)} 2>/dev/null || echo "未找到该容器"`);
+    const lg = await runOnServer(server, `docker logs --tail 40 --timestamps ${JSON.stringify(name)} 2>&1 | tail -40`);
+    out.push({ container: name, state: st.stdout.trim(), logs: (lg.stdout || lg.stderr || "").trim() });
+  }
+  return out;
+}
+
 export async function deploy(config: Config, projectName: string): Promise<DeployResult> {
   const { project, server, serverName } = getProject(config, projectName);
   const result: DeployResult = {
@@ -26,6 +37,7 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
 
     if (run.code !== 0) {
       result.error = `部署命令退出码 ${run.code}`;
+      if (project.containers?.length) result.failLogs = await gatherDiag(server, project.containers);
       return result;
     }
 
@@ -47,14 +59,8 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
     result.success = allOk;
     if (!allOk) {
       result.error = "部署命令成功，但健康检查未通过";
-      // 健康检查红了，自动把相关容器尾部日志抓出来，省去手点
-      if (project.containers?.length) {
-        result.failLogs = [];
-        for (const name of project.containers) {
-          const r = await runOnServer(server, `docker logs --tail 50 --timestamps ${JSON.stringify(name)} 2>&1 | tail -50`);
-          result.failLogs.push({ container: name, logs: (r.stdout || r.stderr || "").trim() });
-        }
-      }
+      // 健康红了，自动抓容器状态+日志（多半是容器退出/端口没起/连不上依赖）
+      if (project.containers?.length) result.failLogs = await gatherDiag(server, project.containers);
     }
     return result;
   } catch (e) {
