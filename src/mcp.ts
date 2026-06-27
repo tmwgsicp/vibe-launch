@@ -13,7 +13,7 @@ import { preDeploy } from "./core/predeploy.js";
 import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
 import { listContainers, getContainerLogs } from "./core/containers.js";
-import { enableSshPool } from "./core/ssh.js";
+import { enableSshPool, runOnServer } from "./core/ssh.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
@@ -185,6 +185,34 @@ export async function startMcp() {
     async ({ server }) => {
       try { return text(await checkExposure(loadConfig(), server)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  // ── 万能原语：在服务器上跑任意命令 ──
+  // AI 原生的关键。结构化动词覆盖常见安全操作，但部署的长尾（探测环境 / 构建 / 起容器 /
+  // 排障 / 改配置）千变万化，不可能都预设成工具。给 AI 一个直接执行命令的原语，它就能
+  // 像人一样灵活把项目部署起来，而不是被死板的预设框住。强大且有副作用，AI 应按需谨慎用。
+  server.tool(
+    "run_command",
+    "在指定服务器上执行任意 shell 命令，返回 stdout/stderr/退出码。这是灵活部署的万能原语：" +
+      "探测环境(docker ps/inspect、ls、检查端口)、构建、起/改容器、看配置、排障等结构化工具没覆盖的，都用它。" +
+      "有副作用、权限大，请明确目的后再用；只读探测随意，破坏性操作(删除/重启线上)要谨慎。",
+    {
+      server: z.string().describe("服务器别名，见 list_projects"),
+      command: z.string().describe("要在服务器上执行的 shell 命令"),
+      cwd: z.string().optional().describe("工作目录（可选）"),
+      timeout: z.number().optional().describe("超时秒数，默认 120；构建类可调大，最多 600"),
+    },
+    async ({ server, command, cwd, timeout }) => {
+      const c = loadConfig();
+      if (!c.servers[server]) return { ...text({ error: `服务器 ${server} 不存在` }), isError: true };
+      const tmo = Math.min(600, Math.max(1, timeout ?? 120)) * 1000;
+      try {
+        const r = await runOnServer(c.servers[server], command, cwd, tmo);
+        return { ...text({ code: r.code, stdout: r.stdout, stderr: r.stderr }), isError: r.code !== 0 };
+      } catch (e) {
+        return { ...text({ error: (e as Error).message }), isError: true };
+      }
     }
   );
 

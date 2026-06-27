@@ -10,7 +10,7 @@ import { setupGit } from "../core/setup-git.js";
 import { getServerStats } from "../core/serverstats.js";
 import { runOnServer, connectSSH, enableSshPool } from "../core/ssh.js";
 import { createTunnel, type TunnelHandle } from "../core/tunnel.js";
-import { recordDeploy, getHistory } from "../core/history.js";
+import { getHistory } from "../core/history.js";
 import { preDeploy } from "../core/predeploy.js";
 import { rollback } from "../core/rollback.js";
 import { checkExposure } from "../core/portcheck.js";
@@ -78,6 +78,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             { name: "get_server_stats", desc: "服务器 CPU/内存/磁盘/负载指标（只读）" },
             { name: "list_containers", desc: "列出容器含已停止（只读）" },
             { name: "check_ports", desc: "数据库端口暴露检测（只读诊断）" },
+            { name: "run_command", desc: "在服务器跑任意命令（AI 灵活部署的万能原语）" },
           ],
           config: { mcpServers: { "vibe-launch": { command: "vibe-launch", args: ["mcp"] } } },
           configNpx: { mcpServers: { "vibe-launch": { command: "npx", args: ["-y", "vibe-launch", "mcp"] } } },
@@ -107,8 +108,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 部署（记历史）
       if (path.startsWith("/api/deploy/") && req.method === "POST") {
         const name = decodeURIComponent(path.slice("/api/deploy/".length));
-        const r = await deploy(loadConfig(), name);
-        recordDeploy({ project: name, ts: Date.now(), success: r.success, gitRev: r.gitRev, error: r.error });
+        const r = await deploy(loadConfig(), name); // 历史已在 core deploy() 内记录
         return json(res, 200, r);
       }
       // 部署历史
@@ -119,8 +119,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       if (path.startsWith("/api/rollback/") && req.method === "POST") {
         const name = decodeURIComponent(path.slice("/api/rollback/".length));
         const b = await readBody(req);
-        const r = await rollback(loadConfig(), name, b.rev);
-        recordDeploy({ project: name, ts: Date.now(), success: r.success, gitRev: r.gitRev, error: r.error, action: "rollback" });
+        const r = await rollback(loadConfig(), name, b.rev); // 历史已在 core rollback() 内记录
         return json(res, 200, r);
       }
       // 部署前预览：将拉取的新提交

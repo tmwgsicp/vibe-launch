@@ -2,6 +2,7 @@
 import type { Config, DeployResult } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
+import { recordDeploy } from "./history.js";
 
 function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n…(已截断 ${s.length - n} 字)` : s;
@@ -59,5 +60,8 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
   } catch (e) {
     result.error = (e as Error).message;
     return result;
+  } finally {
+    // 不管从哪个入口（UI / CLI / MCP）部署，都记一条历史——闭环不漏
+    recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "deploy" });
   }
 }

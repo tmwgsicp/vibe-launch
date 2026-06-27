@@ -2,7 +2,8 @@
 // 故意不跑项目的 deploy 命令（里面常有 git pull，会把代码又拉回最新，等于没回滚）。
 import type { Config, DeployResult } from "./types.js";
 import { getProject } from "./config.js";
-import { runOnServer, curlOnServer } from "./ssh.js";
+import { runOnServer, waitHealthy } from "./ssh.js";
+import { recordDeploy } from "./history.js";
 
 const q = (s: string) => JSON.stringify(s);
 // 只接受短/长 commit hash 或 HEAD~N，挡命令注入
@@ -38,7 +39,7 @@ export async function rollback(config: Config, projectName: string, rev: string)
     // 健康检查
     let allOk = true;
     for (const url of project.health ?? []) {
-      const code = await curlOnServer(server, url);
+      const code = await waitHealthy(server, url);
       const ok = /^2\d\d$/.test(code);
       if (!ok) allOk = false;
       result.health.push({ url, httpCode: code, ok });
@@ -49,5 +50,7 @@ export async function rollback(config: Config, projectName: string, rev: string)
   } catch (e) {
     result.error = (e as Error).message;
     return result;
+  } finally {
+    recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "rollback" });
   }
 }

@@ -427,11 +427,12 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
         +'<button class="sm" onclick="event.stopPropagation();inspectC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">详情</button></div>';
     }).join('');d+='</div>';}
   // 配置文件 / .env（读写锁在项目目录树内，保存前自动备份 .vlbak）
-  d+='<div class="grp"><div class="glabel">项目文件 / .env</div><div class="acts">'
-    +'<button class="sm" onclick="event.stopPropagation();openFb(\''+esc(k)+'\')">浏览文件</button>'
-    +'<input id="fpath-'+esc(k)+'" value=".env" style="padding:6px 10px;font-size:13px;width:170px" onclick="event.stopPropagation()">'
-    +'<button class="sm" onclick="event.stopPropagation();openFile(\''+esc(k)+'\')">直接打开</button>'
+  d+='<div class="grp"><div class="glabel">项目文件 / .env</div>'
+    +'<div class="acts"><button class="sm" onclick="event.stopPropagation();openFb(\''+esc(k)+'\')">浏览文件</button>'
     +(p.dir?'<button class="sm" onclick="event.stopPropagation();openFm(\''+esc(p.server)+'\',\''+je(p.dir)+'\')">全盘文件管理器</button>':'')+'</div>'
+    +'<div class="acts" style="margin-top:8px"><span class="mt" style="color:var(--faint)">快速打开</span>'
+    +'<input id="fpath-'+esc(k)+'" value=".env" style="padding:6px 10px;font-size:13px;width:150px" onclick="event.stopPropagation()" onkeydown="if(event.key===\'Enter\'){event.stopPropagation();openFile(\''+esc(k)+'\')}">'
+    +'<button class="sm" onclick="event.stopPropagation();openFile(\''+esc(k)+'\')">打开</button></div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">「浏览文件」锁在项目目录内（自动备份 .vlbak）；「全盘文件管理器」可在服务器任意路径操作</div></div>';
   // 部署历史
   d+='<div class="grp"><div class="glabel">部署历史</div><div id="hist-'+esc(k)+'">'+histHtml(k)+'</div></div>';
