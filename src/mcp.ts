@@ -4,6 +4,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
+import { restart } from "./core/restart.js";
 import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
@@ -13,7 +14,7 @@ function text(obj: unknown) {
 }
 
 export async function startMcp() {
-  const server = new McpServer({ name: "vibe-launch", version: "0.5.0" });
+  const server = new McpServer({ name: "vibe-launch", version: "0.6.0" });
 
   server.tool(
     "list_projects",
@@ -27,6 +28,16 @@ export async function startMcp() {
     { project: z.string().describe("项目名，见 list_projects") },
     async ({ project }) => {
       const r = await deploy(loadConfig(), project);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "restart_project",
+    "重启项目配置的容器（docker restart）再做健康检查。只重启、不拉代码、不构建 —— 幂等安全。用于容器假死、改了 .env/配置要重新加载。返回每个容器的重启结果 + 健康检查。",
+    { project: z.string().describe("项目名，见 list_projects") },
+    async ({ project }) => {
+      const r = await restart(loadConfig(), project);
       return { ...text(r), isError: !r.success };
     }
   );

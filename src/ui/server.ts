@@ -67,6 +67,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             { name: "list_projects", desc: "列出所有服务器和可部署项目" },
             { name: "get_status", desc: "看项目状态：git 版本 + 容器 + 健康检查" },
             { name: "deploy_project", desc: "部署项目：SSH 跑部署命令 + 健康检查" },
+            { name: "restart_project", desc: "重启项目容器 + 健康检查（幂等，不拉代码）" },
             { name: "add_project", desc: "登记一个部署项目" },
             { name: "onboard_server", desc: "接入新服务器：自动装公钥免密" },
             { name: "setup_git", desc: "把项目转成 git checkout + 配 deploy key" },

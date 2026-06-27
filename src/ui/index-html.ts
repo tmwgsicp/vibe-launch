@@ -1,6 +1,7 @@
 // vibe-launch 本地操作台（单页，内嵌字符串，随包分发）。
 // 设计：苹果哲学落地 —— mono 强调色(近黑/白)、列表优先(hairline divide)、语义 token、
 // 零 emoji、克制留白、删比加。围绕 CI/CD 核心：部署 + 历史 + 容器运维 + 隧道。
+import { WECHAT_QR, GROUP_QR } from "./qr-assets.js";
 export const INDEX_HTML = String.raw`<!doctype html>
 <html lang="zh"><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -15,13 +16,18 @@ export const INDEX_HTML = String.raw`<!doctype html>
   .app{display:flex;min-height:100vh}
   .side{width:224px;flex:none;background:var(--surface-muted);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
   .logo{padding:24px 22px 18px;font-size:16px;font-weight:600;letter-spacing:-.02em}
-  .logo span{color:var(--faint);font-weight:400;font-size:11px;margin-left:4px}
+  .logo span{color:var(--faint);font-weight:500;font-size:10.5px;margin-left:7px;border:1px solid var(--line);border-radius:5px;padding:1px 5px;vertical-align:1px;letter-spacing:.02em}
   nav{padding:4px 12px;display:flex;flex-direction:column;gap:1px}
   nav a{padding:8px 12px;border-radius:7px;color:var(--muted);font-weight:500;cursor:pointer;font-size:13.5px}
   nav a:hover{color:var(--content)}
   nav a.active{color:var(--content);font-weight:600}
-  .foot{margin-top:auto;padding:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:11px}
+  .foot{margin-top:auto;padding:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:12px}
   .foot .ck{display:flex;align-items:center;gap:8px;cursor:pointer;color:var(--content)}
+  .foot .footlink{display:inline-flex;align-items:center;gap:5px;width:fit-content;color:var(--muted);font-weight:500;font-size:12.5px}
+  .foot .footlink:hover{color:var(--content)}
+  .foot .footlink .ext{color:var(--faint);font-size:11px}
+  .foot .priv{display:flex;align-items:center;gap:7px;color:var(--faint);font-size:11.5px}
+  .foot .priv .dot{width:5px;height:5px;border-radius:99px;background:var(--ok);flex:none}
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;width:fit-content}
   .seg a{padding:5px 13px;cursor:pointer;color:var(--muted);font-size:12.5px}
   .seg a.on{background:var(--accent);color:var(--accent-content)}
@@ -83,6 +89,13 @@ export const INDEX_HTML = String.raw`<!doctype html>
   .banner{font-size:14px;color:var(--muted);padding:2px 0 4px}
   .banner b{color:var(--content);font-weight:600}
   .banner.warn b{color:var(--warn)}
+  .qrs{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px}
+  .qrcard{display:flex;flex-direction:column;align-items:center;gap:11px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+  .qrcard img{width:158px;height:158px;object-fit:contain;border-radius:6px;cursor:zoom-in;transition:transform .15s;background:#fff}
+  .qrcard img:hover{transform:scale(1.04)}
+  .qrcap{text-align:center;line-height:1.5}
+  .qrzoom{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:9999;cursor:zoom-out}
+  .qrzoom img{max-width:86vw;max-height:86vh;border-radius:12px;background:#fff;padding:10px}
   .hist{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:10px;padding:5px 0}
   .ipmask{cursor:pointer;border-bottom:1px dashed var(--faint);letter-spacing:1px;user-select:none}
   .ipmask:hover{color:var(--content)}
@@ -133,7 +146,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="logo">vibe-launch<span>0.5</span></div>
+    <div class="logo">vibe-launch<span>v0.6</span></div>
     <nav id="nav">
       <a data-v="overview" class="active">总览</a>
       <a data-v="servers">服务器</a>
@@ -142,14 +155,15 @@ export const INDEX_HTML = String.raw`<!doctype html>
       <a data-v="settings">设置</a>
     </nav>
     <div class="foot">
-      <div class="cfgp">纯本地 · 只监听 127.0.0.1 · 无账号</div>
+      <a class="footlink" href="https://github.com/tmwgsicp/vibe-launch" target="_blank" rel="noopener">在 GitHub 查看<span class="ext">↗</span></a>
+      <div class="priv"><span class="dot"></span>纯本地 · 仅监听 127.0.0.1 · 无账号</div>
     </div>
   </aside>
   <main>
     <header class="top">
       <h1 id="vtitle">总览</h1><span class="sub" id="vsub"></span>
       <div class="sp"></div>
-      <button class="sm" onclick="refreshAll()">刷新</button>
+      <button class="sm" id="refBtn" onclick="refreshAll()">刷新</button>
       <button class="sm primary" id="addBtn"></button>
     </header>
     <div class="content">
@@ -235,8 +249,8 @@ export const INDEX_HTML = String.raw`<!doctype html>
 
 <script>
 const $=id=>document.getElementById(id);
-let CONFIG={servers:{},projects:{}},STATUS={},STATS={},MCP=null,TUN=[],HIST={},VIEW='overview',EXP=new Set(),HIDEIP=false,REV=new Set(),timer=null;
-let THEME='system',AUTOREF=true,AUTOREF_SEC=30,LOG={server:'',container:'',lines:[],es:null};
+let CONFIG={servers:{},projects:{}},STATUS={},STATS={},MCP=null,TUN=[],HIST={},CTS={},VIEW='overview',EXP=new Set(),HIDEIP=false,REV=new Set(),timer=null;
+let THEME='system',AUTOREF=false,AUTOREF_SEC=30,LOG={server:'',container:'',lines:[],es:null};
 
 function toast(m,t){const e=document.createElement('div');e.className='toast '+(t||'');e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),3000);}
 async function api(p,o,ms){ms=ms===undefined?20000:ms;const ac=new AbortController();const t=ms>0?setTimeout(()=>ac.abort(),ms):null;try{const r=await fetch(p,Object.assign({signal:ac.signal},o||{}));const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;}catch(e){if(e&&e.name==='AbortError')throw new Error('请求超时（'+Math.round(ms/1000)+'s）—— 服务器无响应');throw e;}finally{if(t)clearTimeout(t);}}
@@ -262,12 +276,20 @@ function go(v){VIEW=v;
 }
 
 async function loadConfig(){CONFIG=await api('/api/config');}
-async function loadStatus(){try{STATUS={};const a=await api('/api/status');for(const s of a)STATUS[s.project]=s;}catch(e){toast(e.message,'err');}}
-function loadStats(){for(const n of Object.keys(CONFIG.servers||{})){STATS[n]={loading:true};
+// 刷新都用 stale-while-revalidate：保留旧数据，新数据到了再静默替换，不闪 spinner。
+// 只有从来没加载过（无旧值）时才显示加载态。
+async function loadStatus(){try{const a=await api('/api/status');const m={};for(const s of a)m[s.project]=s;STATUS=m;}catch(e){toast(e.message,'err');}}
+function loadStats(){for(const n of Object.keys(CONFIG.servers||{})){
+  if(!STATS[n])STATS[n]={loading:true};   // 首次才转圈；之后保留旧指标静默刷新
   api('/api/server-stats?server='+encodeURIComponent(n)).then(s=>{STATS[n]=s;render();}).catch(()=>{STATS[n]={reachable:false};render();});}}
 async function loadTun(){try{TUN=await api('/api/tunnels');}catch(e){TUN=[];}}
 async function loadMcp(){try{MCP=await api('/api/mcp-info');}catch(e){}}
-async function refreshAll(){await loadConfig();render();loadStats();await Promise.all([loadStatus(),loadTun()]);render();}
+async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textContent='刷新中…';}
+  try{await loadConfig();render();loadStats();await Promise.all([loadStatus(),loadTun()]);
+    // 手动刷新时连带刷新当前展开的容器/历史（仍保留旧值，不闪）
+    for(const id of EXP){if(id.slice(0,2)==='s:')loadCts(id.slice(2));else if(id.slice(0,2)==='p:')loadHist(id.slice(2));}
+    render();}
+  finally{if(b){b.disabled=false;b.textContent='刷新';}}}
 function render(){({overview:rOverview,servers:rServers,projects:rProjects,mcp:rMcp,settings:rSettings}[VIEW]||rOverview)();}
 
 function mbar(p){p=Math.max(0,Math.min(100,Math.round(p)));const c=p>=90?'hot':(p>=70?'warn':'');return '<div class="bar"><i class="'+c+'" style="width:'+p+'%"></i></div>';}
@@ -318,7 +340,8 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
   if(s&&s.loading)mini='<span class="mt"><span class="spin"></span></span>';
   else if(s&&!s.reachable)mini='<span class="st"><span class="dot bad"></span>连不上</span>';
   else if(s){const p=[];if(s.load&&s.cores)p.push('<div class="mini">负载 '+mbar(s.load[0]/s.cores*100)+'</div>');
-    if(s.memTotalMb)p.push('<div class="mini">内存 '+mbar(s.memUsedMb/s.memTotalMb*100)+'</div>');mini=p.join('');}
+    if(s.memTotalMb)p.push('<div class="mini">内存 '+mbar(s.memUsedMb/s.memTotalMb*100)+'</div>');
+    if(s.diskTotalMb)p.push('<div class="mini">磁盘 '+mbar(s.diskUsedMb/s.diskTotalMb*100)+'</div>');mini=p.join('');}
   let row='<div class="row '+(op?'open':'')+'" onclick="toggle(\'s:'+esc(k)+'\')"><span class="nm">'+esc(k)+'</span>'
     +'<span class="mt">'+esc(v.user)+'@'+hostHtml(k,v)+(v.port&&v.port!=22?':'+v.port:'')+'</span>'
     +(v.note?'<span class="mt" style="color:var(--faint)">'+esc(v.note)+'</span>':'')+mini
@@ -359,13 +382,13 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
   // 容器管理（列全部 + 删停止 + 一键清理）
   d+='<div class="grp"><div class="glabel">容器管理　<a class="link" onclick="event.stopPropagation();loadCts(\''+esc(k)+'\')">刷新</a></div>'
     +'<div class="acts"><button class="sm" onclick="event.stopPropagation();pruneCts(\''+esc(k)+'\')">清理停止容器</button></div>'
-    +'<div id="cts-'+esc(k)+'" style="margin-top:9px"><span class="mt">展开加载中…</span></div></div>';
+    +'<div id="cts-'+esc(k)+'" style="margin-top:9px">'+ctsHtml(k)+'</div></div>';
   // 文件管理（全盘，任意路径）
   d+='<div class="grp"><div class="glabel">文件管理</div><div class="acts"><button class="sm" onclick="event.stopPropagation();openFm(\''+esc(k)+'\',\'\')">打开文件管理器</button></div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">浏览/上传/下载/编辑/重命名/删除，可在服务器任意路径操作</div></div>';
   // 管理
   d+='<div class="grp"><div class="acts"><button class="sm" onclick="event.stopPropagation();openSrvEdit(\''+esc(k)+'\')">编辑</button><button class="sm" onclick="event.stopPropagation();delServer(\''+esc(k)+'\')">删除</button></div></div>';
-  setTimeout(()=>loadCts(k),0);
+  if(!CTS[k])setTimeout(()=>loadCts(k),0);
   return row+d+'</div>';
 }
 
@@ -408,15 +431,15 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
     +(p.dir?'<button class="sm" onclick="event.stopPropagation();openFm(\''+esc(p.server)+'\',\''+je(p.dir)+'\')">全盘文件管理器</button>':'')+'</div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">「浏览文件」锁在项目目录内（自动备份 .vlbak）；「全盘文件管理器」可在服务器任意路径操作</div></div>';
   // 部署历史
-  d+='<div class="grp"><div class="glabel">部署历史</div><div id="hist-'+esc(k)+'"><span class="mt">加载中…</span></div></div>';
+  d+='<div class="grp"><div class="glabel">部署历史</div><div id="hist-'+esc(k)+'">'+histHtml(k)+'</div></div>';
   // 管理
   d+='<div class="grp"><div class="acts"><button class="sm" onclick="event.stopPropagation();openPrjEdit(\''+esc(k)+'\')">编辑</button><button class="sm" onclick="event.stopPropagation();delProject(\''+esc(k)+'\')">删除</button></div></div>';
-  setTimeout(()=>loadHist(k),0);
+  if(!HIST[k])setTimeout(()=>loadHist(k),0);
   return row+d+'</div>';
 }
-async function loadHist(k){try{const a=await api('/api/history?project='+encodeURIComponent(k));const el=$('hist-'+k);if(!el)return;
-  el.innerHTML=a.length?a.map(r=>'<div class="hist"><span class="dot '+(r.success?'ok':'bad')+'"></span>'+(r.action==='rollback'?'↩ 回滚':'部署')+' · '+new Date(r.ts).toLocaleString()+(r.gitRev?' · '+esc(r.gitRev):'')+(r.error?' · '+esc(r.error).slice(0,28):'')+(r.gitRev?'　<a class="link" onclick="event.stopPropagation();doRollback(\''+esc(k)+'\',\''+esc(r.gitRev)+'\')">回滚到此</a>':'')+'</div>').join(''):'<span class="mt">还没有部署记录</span>';
-}catch(e){}}
+function histHtml(k){const a=HIST[k];if(!a)return '<span class="mt">加载中…</span>';
+  return a.length?a.map(r=>'<div class="hist"><span class="dot '+(r.success?'ok':'bad')+'"></span>'+(r.action==='rollback'?'↩ 回滚':'部署')+' · '+new Date(r.ts).toLocaleString()+(r.gitRev?' · '+esc(r.gitRev):'')+(r.error?' · '+esc(r.error).slice(0,28):'')+(r.gitRev?'　<a class="link" onclick="event.stopPropagation();doRollback(\''+esc(k)+'\',\''+esc(r.gitRev)+'\')">回滚到此</a>':'')+'</div>').join(''):'<span class="mt">还没有部署记录</span>';}
+async function loadHist(k){try{HIST[k]=await api('/api/history?project='+encodeURIComponent(k));}catch(e){if(!HIST[k])HIST[k]=[];}render();}
 async function doRollback(k,rev){if(!confirm('把 '+k+' 回滚到 '+rev+'？\n会 git reset --hard 到该版本并重启容器（不跑部署命令）。'))return;
   const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 回滚中…</pre>';
   try{const r=await api('/api/rollback/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev})},0);
@@ -449,9 +472,16 @@ function rSettings(){
   if(AUTOREF)h+=row('刷新间隔','',seg([['15','15 秒'],['30','30 秒'],['60','60 秒']],String(AUTOREF_SEC),'setIntervalSec'));
   h+=row('隐藏服务器 IP','列表里打码，点击单独显示',sw(HIDEIP,'setHideip'));
   h+='<h2 class="sec">关于</h2>';
-  h+=row('vibe-launch 0.5','纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
+  h+=row('vibe-launch 0.6','纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
   h+=row('配置文件','<span class="cfgp">'+esc(CONFIG._path||'')+'</span>','');
+  h+='<h2 class="sec">联系与交流</h2>';
+  const qr=(src,title,sub)=>'<figure class="qrcard"><img src="'+src+'" alt="'+title+'" onclick="qrZoom(this.src)">'
+    +'<figcaption class="qrcap"><div class="sk">'+title+'</div><div class="sd">'+sub+'</div></figcaption></figure>';
+  h+='<div class="qrs">'+qr('${WECHAT_QR}','个人微信','技术交流 · 商务合作')+qr('${GROUP_QR}','vibecoding 交流群','扫码加入')+'</div>';
   $('view-settings').innerHTML=h;
+}
+function qrZoom(src){const o=document.createElement('div');o.className='qrzoom';o.onclick=()=>o.remove();
+  const img=document.createElement('img');img.src=src;o.appendChild(img);document.body.appendChild(o);
 }
 
 /* ---- 操作 ---- */
@@ -632,17 +662,17 @@ async function fmDelete(name,isDir){if(!confirm('删除'+(isDir?'文件夹':'文
   try{await api('/api/fs/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:FM.server,path:fmJoin(name)})});toast('已删除');fmGo(FM.cwd);}catch(e){toast(e.message,'err');}}
 
 /* ---- 容器管理（服务器维度：列全部 + 删停止 + 一键 prune）---- */
-async function loadCts(server){const el=$('cts-'+server);if(el)el.innerHTML='<span class="mt"><span class="spin"></span> 加载容器…</span>';
-  try{const a=await api('/api/containers?server='+encodeURIComponent(server),undefined,30000);if(!el)return;
-    const stopped=a.filter(c=>!c.running).length;
-    el.innerHTML='<div class="mt" style="margin-bottom:6px">共 '+a.length+' 个 · 运行 '+(a.length-stopped)+' · 停止 '+stopped+'</div>'+
-      (a.length?a.map(c=>'<div class="citem"><span class="dot '+(c.running?'ok':'bad')+'"></span><span class="cn">'+esc(c.name)+'</span>'
-        +'<span class="mt" style="color:var(--faint)">'+esc(c.state)+'</span><span class="sp"></span>'
-        +(c.running
-          ?'<button class="sm" onclick="event.stopPropagation();showLogs(\''+je(server)+'\',\''+je(c.name)+'\')">日志</button><button class="sm" onclick="event.stopPropagation();restartC(\''+je(server)+'\',\''+je(c.name)+'\')">重启</button>'
-          :'<button class="sm" onclick="event.stopPropagation();delCt(\''+je(server)+'\',\''+je(c.name)+'\')">删除</button>')
-        +'</div>').join(''):'<span class="mt">无容器</span>');
-  }catch(e){if(el)el.innerHTML='<span class="mt">'+esc(e.message)+'</span>';}}
+function ctsHtml(server){const a=CTS[server];if(!a)return '<span class="mt"><span class="spin"></span> 加载容器…</span>';
+  if(a.error)return '<span class="mt">'+esc(a.error)+'</span>';
+  const list=a.list,stopped=list.filter(c=>!c.running).length;
+  return '<div class="mt" style="margin-bottom:6px">共 '+list.length+' 个 · 运行 '+(list.length-stopped)+' · 停止 '+stopped+'</div>'+
+    (list.length?list.map(c=>'<div class="citem"><span class="dot '+(c.running?'ok':'bad')+'"></span><span class="cn">'+esc(c.name)+'</span>'
+      +'<span class="mt" style="color:var(--faint)">'+esc(c.state)+'</span><span class="sp"></span>'
+      +(c.running
+        ?'<button class="sm" onclick="event.stopPropagation();showLogs(\''+je(server)+'\',\''+je(c.name)+'\')">日志</button><button class="sm" onclick="event.stopPropagation();restartC(\''+je(server)+'\',\''+je(c.name)+'\')">重启</button>'
+        :'<button class="sm" onclick="event.stopPropagation();delCt(\''+je(server)+'\',\''+je(c.name)+'\')">删除</button>')
+      +'</div>').join(''):'<span class="mt">无容器</span>');}
+async function loadCts(server){try{const a=await api('/api/containers?server='+encodeURIComponent(server),undefined,30000);CTS[server]={list:a};}catch(e){CTS[server]={list:[],error:e.message};}render();}
 async function delCt(server,name){if(!confirm('删除容器 '+name+' ？\n仅删除已停止的容器，不可恢复（镜像和数据卷不受影响）。'))return;
   try{await api('/api/container-remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server,container:name})});toast(name+' 已删除');loadCts(server);loadStats();}catch(e){toast(e.message,'err');}}
 async function pruneCts(server){if(!confirm('清理 '+server+' 上所有【已停止】的容器？\n会执行 docker container prune，删除全部停止状态的容器，不可恢复。\n（运行中的容器不受影响）'))return;
@@ -656,7 +686,7 @@ async function submitGit(){$('g_go').disabled=true;
 
 try{THEME=localStorage.getItem('vl-theme')||'system';}catch(e){}
 try{HIDEIP=localStorage.getItem('vl-hideip')==='1'}catch(e){}
-try{AUTOREF=localStorage.getItem('vl-autoref')!=='0';}catch(e){AUTOREF=true;}
+try{AUTOREF=localStorage.getItem('vl-autoref')==='1';}catch(e){AUTOREF=false;}
 try{var _as=+localStorage.getItem('vl-autoref-sec');if(_as)AUTOREF_SEC=_as;}catch(e){}
 applyTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(THEME==='system')applyTheme();});

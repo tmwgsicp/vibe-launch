@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
+import { restart } from "./core/restart.js";
 import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
@@ -12,7 +13,7 @@ const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.5.0")
+  .version("0.6.0")
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {
@@ -44,6 +45,22 @@ program
       console.log(`✅ ${project} 部署成功${r.gitRev ? " @ " + r.gitRev : ""}`);
     } else {
       console.error(`❌ ${project} 部署失败：${r.error ?? "未知"}`);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("restart <project>")
+  .description("重启项目容器（docker restart）+ 健康检查；只重启不拉代码")
+  .action(async (project: string) => {
+    console.log(`==> 重启 ${project} …`);
+    const r = await restart(cfg(), project);
+    for (const c of r.restarted) console.log(`  ${c.container}: ${c.ok ? "✓ 已重启" : "✗ " + c.output}`);
+    for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
+    if (r.success) {
+      console.log(`✅ ${project} 已重启`);
+    } else {
+      console.error(`❌ ${project} 重启失败：${r.error ?? "未知"}`);
       process.exitCode = 1;
     }
   });

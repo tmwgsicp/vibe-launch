@@ -2,37 +2,61 @@
 
 # 🚀 vibe-launch
 
-### 把 AI 写的项目，一键部署到你的服务器
+### 把 AI 写的项目，一键部署到你的服务器 | MCP 原生 | agentless | 多服务器编排
 
-**在 Claude Code / Cursor 里说一句"部署"就上线** · 轻量 · agentless · AI 原生
+**一句"部署"就上线 | SSH 全自动免密 | 可视化操作台 | git 部署闭环 | 安全隧道**
 
-[![License](https://img.shields.io/badge/License-AGPL%203.0-blue?style=flat-square)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A518-brightgreen?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![MCP](https://img.shields.io/badge/MCP-ready-purple?style=flat-square)]()
+[![GitHub stars](https://img.shields.io/github/stars/tmwgsicp/vibe-launch?style=for-the-badge&logo=github)](https://github.com/tmwgsicp/vibe-launch/stargazers)
+[![License](https://img.shields.io/badge/License-AGPL%203.0-blue?style=for-the-badge)](LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A518-brightgreen?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![MCP](https://img.shields.io/badge/MCP-ready-purple?style=for-the-badge)]()
+
+> **100% 开源，完全免费。** 纯本地工具 —— 无账号、无后端、无 secret，清单和密钥都在你自己机器上，透明可控。
 
 </div>
 
 ---
 
-> **vibe-tutor 教你怎么做，vibe-launch 替你部署上线。** —— 补全 vibecoding "从写到上线" 的最后一公里。
+> **vibe-tutor 教你怎么做，vibe-launch 替你部署上线。** —— 补全 vibecoding「从写到上线」的最后一公里。
 
-## 这是什么
+## 🎯 解决什么问题？
 
-一个**多服务器部署编排器**：把散落各处的「哪个项目在哪台 / SSH 怎么连 / 一键部署 / 看状态」收进一个轻工具。重活（容器、数据库、反代）交给 1Panel / docker —— 它只管**部署编排 + 清单**。
+AI 帮你把项目写完了，但**部署上线**还是一道坎：
 
-- 🪶 **agentless**：用你本地 `~/.ssh` 直连服务器，目标机零安装
-- 🔌 **部署机制可插拔**：每个项目自配部署命令（`git pull && docker restart` / `docker compose up` / 任意脚本）—— 不锁 1Panel/GitHub
-- 🤖 **AI 原生**：MCP 让 Claude Code / Cursor / Codex 直接调用；CLI 给终端和自动化
-- 🔑 **SSH 全自动**：一条命令自动生成专用 key、装到服务器、之后免密 —— 不用你手搓 ssh-keygen
-- 🖥️ **可视化操作台**：`vibe-launch ui` 浏览器里看状态、一键部署、接入服务器、登记项目 —— 纯本地
+- ❌ 手搓 `ssh-keygen`、配免密、上 GitHub 加 deploy key —— 每台服务器、每个项目都来一遍
+- ❌ 多个项目散在多台机器，「哪个在哪台、当初怎么部署的」全靠脑子记
+- ❌ 想让 AI 顺手帮你部署，可它碰不到你的服务器
+- ❌ 数据库端口图省事开了公网，悄悄变成攻击面
+- ❌ 部署完不知道成没成，一出问题就 SSH 上去翻半天日志
 
-## 安装
+**vibe-launch 帮你：**
+
+- ✅ **一条命令接入服务器** —— 自动装专用 key，之后免密直连
+- ✅ **一份本地清单** 管住所有服务器和项目，谁在哪台、怎么部署一目了然
+- ✅ **MCP 原生** —— 在 Claude Code / Cursor 里说一句「部署 X」就上线
+- ✅ **SSH 隧道** 把内网数据库映射到本地，公网端口彻底关掉
+- ✅ **可视化操作台** —— 部署 / 回滚 / 日志 / 状态一眼看全
+
+## ✨ 核心特性
+
+- 🪶 **agentless** —— 用你本地 `~/.ssh` 直连，目标服务器零安装
+- 🤖 **AI 原生** —— MCP 让 Claude Code / Cursor / Codex 直接调用；CLI 给终端和自动化
+- 🔑 **SSH 全自动** —— 一条命令生成专用 key、装到服务器、之后免密，不用手搓 `ssh-keygen`
+- 🔌 **部署机制可插拔** —— 每个项目自配部署命令（`git pull && docker restart` / `docker compose up` / 任意脚本），不锁 1Panel / GitHub
+- 📥 **git 部署闭环** —— 一条命令把服务器目录转成 git checkout + 自动配只读 deploy key，之后 `git pull` 部署
+- 🖥️ **可视化操作台** —— 状态 / 部署 / 回滚 / 实时日志 / 端口检测 / 文件管理，纯本地浏览器里点
+- 🔒 **安全隧道** —— 内网 PG / Redis 映射到本地，公网 DB 端口可彻底关闭
+- 🌍 **跨发行版** —— 指标采集只依赖 procfs + POSIX，CentOS 7 老到 git 1.8 也兼容
+
+## 📦 安装
 
 ```bash
 npm install -g vibe-launch
 ```
 
-## 60 秒上手
+> 需要 Node ≥ 18。装好后 `vibe-launch`（或简写 `vl`）即可用。
+
+## 🚀 60 秒上手
 
 ```bash
 # 1. 接入服务器（自动配好 SSH，之后免密）
@@ -45,20 +69,34 @@ vibe-launch project add myapp --server prod \
   --containers myapp-api,myapp-web \
   --health http://127.0.0.1:8000/health
 
-# 3. 部署 / 看状态
+# 3. 部署 / 看状态 / 重启
 vibe-launch deploy myapp
 vibe-launch status
+vibe-launch restart myapp     # 只重启容器 + 健康检查，不拉代码
 ```
 
-## 可视化操作台
+## 🖥️ 可视化操作台
 
 ```bash
 vibe-launch ui          # 起本地操作台 + 自动开浏览器（localhost:7777）
 ```
 
-浏览器里：服务器/项目卡片（git 版本 + 容器状态 + 健康检查）、**一键部署**（带实时输出）、刷新状态、接入新服务器、登记项目 —— 全可视化点操作。纯本地、只监听 `127.0.0.1`、无需账号。
+> 起 `vibe-launch ui` 后浏览器里看：**总览 / 服务器 / 项目 / MCP / 设置** 五个页签。
 
-## 给 AI 工具用（MCP）
+一个完整的运维面板，纯本地、只监听 `127.0.0.1`、无需账号。「看比说高效」的那些事都在这里：
+
+- **总览** —— 项目状态网格（git 版本 / 容器 / 健康检查）+ 服务器健康一眼概况
+- **服务器** —— 内存 / 磁盘 / 负载彩色条 + 容器数 + 运行时长 + OS / 内核 / CPU 信息（一次 SSH 采集）
+- **一键部署** —— 实时输出；**部署前看更新**（列出将拉取的新提交 diff）；健康检查失败自动拉容器尾部日志
+- **回滚** —— 部署历史里每条「回滚到此」，git reset 到旧版本 + 重启 + 健康检查
+- **容器** —— 列表（含已停止）/ 重启 / 删除 / 清理；**实时日志流**（关键词高亮 / 只看错误 / 导出 `.log`）
+- **端口暴露检测** —— 探 PG / Redis / MySQL / Mongo / SQL Server 公网可达性，区分容器 vs 原生、仅本地 vs 公网，给针对性关闭指引
+- **隧道** —— 界面里一键开 PG / Redis 隧道、管理活跃隧道
+- **文件** —— 项目目录 / 服务器任意路径浏览，`.env` 等配置在线编辑（存前自动备份）、二进制上传下载
+
+> 重活（容器编排、数据库、反代、防火墙全功能、Web 终端）是 1Panel 的地盘 —— vibe-launch 只做**部署闭环 + 「看比说高效」的可视化**，不做又一个服务器面板。
+
+## 🤖 给 AI 工具用（MCP）
 
 启动 MCP server：
 
@@ -66,7 +104,15 @@ vibe-launch ui          # 起本地操作台 + 自动开浏览器（localhost:77
 vibe-launch mcp
 ```
 
-在 Claude Code / Cursor 里配置后，对它说 **"部署 myapp"**，它会调用 `deploy_project` 工具完成。
+在 Claude Code / Cursor 里配置后，对它说 **「部署 myapp」**，它会调用 `deploy_project` 工具完成。
+
+```json
+{
+  "mcpServers": {
+    "vibe-launch": { "command": "npx", "args": ["-y", "vibe-launch", "mcp"] }
+  }
+}
+```
 
 | 命令 | MCP 工具 |
 |---|---|
@@ -74,9 +120,12 @@ vibe-launch mcp
 | `project add` | `add_project` |
 | `setup-git <项目>` | `setup_git` |
 | `deploy <项目>` | `deploy_project` |
+| `restart <项目>` | `restart_project` |
 | `status [项目]` | `get_status` |
 
-## 让项目用 git 部署（一条命令搞定）
+> MCP 只暴露**安全幂等的动词**（list / status / deploy / restart / 登记）。盯实时日志、开隧道、回滚、文件管理这类交互 / 有风险的操作只在操作台（`ui`）里，不进 MCP —— 不让 AI 自动碰。
+
+## 🔗 让项目用 git 部署（一条命令搞定）
 
 想让服务器 `git pull` 拉私有仓库部署，难点是「服务器怎么有权限拉代码」。`setup-git` 一条命令全自动：
 
@@ -85,7 +134,8 @@ vibe-launch setup-git myapp --repo yourname/yourrepo
 ```
 
 它会在服务器上：
-1. **装 git**（没有就自动装；老到 git 1.8/CentOS7 也兼容）
+
+1. **装 git**（没有就自动装；老到 git 1.8 / CentOS 7 也兼容）
 2. **生成专用 deploy key**（每个项目一把，只读）
 3. **自动把 key 加到 GitHub 仓库的 Deploy Keys** —— 你不用手动碰 GitHub 设置
 4. **配好 ssh 别名 + remote**，免密拉取
@@ -107,19 +157,11 @@ vibe-launch auth --logout # 清除 token
 
 > 三种 key 各司其职、互不相干：① 你本地连服务器的 SSH key　② 你本地推代码到 GitHub 的认证（`gh`）　③ 服务器拉代码的 deploy key（这条命令自动配的）。
 
-之后把部署命令设成 `git pull && ...` 即可：
+目录已经有手写代码（非 git）？加 `--adopt`，它会**先备份**再转成 git checkout（用仓库覆盖被跟踪文件，保留 `.env` / 构建产物等未跟踪文件）。
 
-```bash
-vibe-launch project add myapp --server prod --dir /path/to/app \
-  --deploy "git pull && docker restart myapp-api myapp-web"
-vibe-launch deploy myapp
-```
+## 🔒 安全访问：SSH 隧道（免开公网 DB 端口）
 
-目录已经有手写代码（非 git）？加 `--adopt`，它会**先备份**再转成 git checkout（用仓库覆盖被跟踪文件，保留 `.env`/构建产物等未跟踪文件）。
-
-## 安全访问：SSH 隧道（免开公网 DB 端口）
-
-数据库/缓存**不该暴露在公网**。生产让 app 走内网容器访问 PG/Redis；你本地开发要连库时，用隧道：
+数据库 / 缓存**不该暴露在公网**。生产让 app 走内网容器访问 PG / Redis；你本地开发要连库时，用隧道：
 
 ```bash
 vibe-launch tunnel prod --service pg      # 本地 localhost:5432 → 服务器内网 PG
@@ -127,14 +169,60 @@ vibe-launch tunnel prod --service redis   # 本地 localhost:6379 → 服务器�
 vibe-launch tunnel prod --remote-port 8001 --local-port 18001   # 任意端口
 ```
 
-走的是已有的 SSH 端口（key 加密）。你的 DB 工具连 `localhost` 即可，**服务器上 PG/Redis 的公网端口可以彻底关闭**，攻击面大降。`Ctrl+C` 关闭隧道。
+走的是已有的 SSH 端口（key 加密）。你的 DB 工具连 `localhost` 即可，**服务器上 PG / Redis 的公网端口可以彻底关闭**，攻击面大降。`Ctrl+C` 关闭隧道。
 
-## 设计原则
+## 🧭 设计原则
 
-- **不做 1Panel/k8s 已经做好的事**：不跑容器、不管数据库、不反代、不 build 镜像
-- **只做缺的那块**：多服务器多项目的**集中编排 + 清单 + AI 接口**
+- **不做 1Panel / k8s 已经做好的事** —— 不跑容器、不管数据库、不反代、不 build 镜像
+- **只做缺的那块** —— 多服务器多项目的**集中编排 + 清单 + AI 接口**
 - **清单 + 专用 key** 都在本地 `~/.vibe-launch/`，透明可控
+
+## 🧩 vibecoding 工具家族
+
+从写到上线，一条龙：
+
+- 📘 **[vibecoding 教程](https://vibecoding.waytomaster.com)** —— AI 编程方法论，从想法到上线
+- 🎓 **[Vibe Tutor](https://github.com/tmwgsicp/vibe-tutor)** —— AI 编程方法论导师（14 步流程 + 7 大陷阱检测）
+- 🚀 **vibe-launch** —— 你在这里：替你把项目部署上线
+
+## 💬 联系方式
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="assets/qrcode/wechat.jpg" width="200"><br>
+      <b>个人微信</b><br>
+      <em>技术交流 · 商务合作</em>
+    </td>
+    <td align="center">
+      <img src="assets/qrcode/sponsor.jpg" width="200"><br>
+      <b>赞赏支持</b><br>
+      <em>开源不易，感谢支持</em>
+    </td>
+  </tr>
+</table>
+
+- **GitHub Issues**：[提交问题](https://github.com/tmwgsicp/vibe-launch/issues)
+- **邮箱**：creator@waytomaster.com
+
+## 🙏 致谢
+
+- [commander](https://github.com/tj/commander.js) —— CLI 框架
+- [ssh2 / node-ssh](https://github.com/mscdex/ssh2) —— SSH 直连
+- [Model Context Protocol SDK](https://github.com/modelcontextprotocol) —— AI 工具接口
+
+---
 
 ## License
 
-AGPL-3.0-only
+[AGPL-3.0-only](LICENSE)
+
+<div align="center">
+
+**如果觉得有用，点个 ⭐ Star 支持一下！**
+
+[![Star History Chart](https://api.star-history.com/svg?repos=tmwgsicp/vibe-launch&type=Date)](https://star-history.com/#tmwgsicp/vibe-launch&Date)
+
+Made with ❤️ by [tmwgsicp](https://github.com/tmwgsicp)
+
+</div>
