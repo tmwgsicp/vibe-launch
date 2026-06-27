@@ -48,38 +48,108 @@ export async function connectSSH(server: ServerConfig): Promise<NodeSSH> {
   return ssh;
 }
 
+// ── SSH 连接池 ──
+// 默认关闭（CLI 一次性命令不需要池，且保留连接会吊住事件循环导致进程不退出）。
+// 长驻进程（操作台 ui / MCP server）启动时调 enableSshPool() 打开：连一次保持热连接，
+// 后续命令只开 channel 不再重新握手——文件管理器翻目录、刷状态等从"每次几百毫秒握手"降到近即时。
+const POOL = new Map<string, { ssh: NodeSSH; idle?: NodeJS.Timeout }>();
+let POOLING = false;
+const IDLE_MS = 5 * 60 * 1000;
+
+export function enableSshPool(): void {
+  POOLING = true;
+}
+
+const keyOf = (s: ServerConfig) => `${s.user}@${s.host}:${s.port ?? 22}`;
+
+function isAlive(ssh: NodeSSH): boolean {
+  try {
+    return typeof (ssh as any).isConnected === "function" ? (ssh as any).isConnected() : !!(ssh as any).connection;
+  } catch {
+    return false;
+  }
+}
+
+function evict(key: string, ssh?: NodeSSH): void {
+  const ent = POOL.get(key);
+  if (ent && (!ssh || ent.ssh === ssh)) {
+    if (ent.idle) clearTimeout(ent.idle);
+    try { ent.ssh.dispose(); } catch { /* ignore */ }
+    POOL.delete(key);
+  }
+}
+
+async function acquire(server: ServerConfig): Promise<NodeSSH> {
+  if (!POOLING) return connectSSH(server);
+  const key = keyOf(server);
+  const ent = POOL.get(key);
+  if (ent && isAlive(ent.ssh)) {
+    if (ent.idle) { clearTimeout(ent.idle); ent.idle = undefined; }
+    return ent.ssh;
+  }
+  if (ent) evict(key);
+  const ssh = await connectSSH(server);
+  POOL.set(key, { ssh });
+  return ssh;
+}
+
+function release(server: ServerConfig, ssh: NodeSSH): void {
+  if (!POOLING) { try { ssh.dispose(); } catch { /* ignore */ } return; }
+  const key = keyOf(server);
+  const ent = POOL.get(key);
+  if (ent && ent.ssh === ssh) {
+    if (ent.idle) clearTimeout(ent.idle);
+    ent.idle = setTimeout(() => evict(key, ssh), IDLE_MS);
+    // 空闲计时器不应单独吊住进程退出
+    (ent.idle as any).unref?.();
+  }
+}
+
+const isConnError = (e: unknown): boolean =>
+  /not connected|no response|closed|ended|ECONNRESET|EHOSTUNREACH|ETIMEDOUT|EPIPE/i.test((e as Error)?.message || "");
+
 /** 在服务器上跑一条命令（可指定 cwd）。
- * timeoutMs：命令级硬超时（默认 20s，<=0 关闭）。connectSSH 的 readyTimeout 只管连接握手，
- * 命令本身若卡住（如 dockerd 僵死）execCommand 永不返回，会把 HTTP handler 吊死、前端转圈不停——
- * 这里用 Promise.race 兜底，超时即抛错并断开连接。 */
+ * 连接池开启时复用热连接（见上）；命令出错/超时的连接会被丢弃，连接级错误自动重连重试一次。
+ * timeoutMs：命令级硬超时（默认 20s，<=0 关闭）。connectSSH 的 readyTimeout 只管握手，
+ * 命令本身卡住（如 dockerd 僵死）execCommand 永不返回，这里用 Promise.race 兜底。 */
 export async function runOnServer(
   server: ServerConfig,
   command: string,
   cwd?: string,
-  timeoutMs = 20000
+  timeoutMs = 20000,
+  _allowRetry = true
 ): Promise<ExecResult> {
-  const ssh = await connectSSH(server);
+  const ssh = await acquire(server);
+  let bad = false;
   try {
     const exec = ssh.execCommand(command, cwd ? { cwd } : {});
+    let res;
     if (timeoutMs > 0) {
       let to: NodeJS.Timeout | undefined;
       const timeout = new Promise<never>((_, rej) => {
-        to = setTimeout(
-          () => rej(new Error(`命令执行超时（${Math.round(timeoutMs / 1000)}s）`)),
-          timeoutMs
-        );
+        to = setTimeout(() => rej(new Error(`命令执行超时（${Math.round(timeoutMs / 1000)}s）`)), timeoutMs);
       });
       try {
-        const res = await Promise.race([exec, timeout]);
-        return { code: res.code, stdout: res.stdout, stderr: res.stderr };
+        res = await Promise.race([exec, timeout]);
       } finally {
         if (to) clearTimeout(to);
       }
+    } else {
+      res = await exec;
     }
-    const res = await exec;
     return { code: res.code, stdout: res.stdout, stderr: res.stderr };
+  } catch (e) {
+    bad = true;
+    // 池里的连接断了：丢弃，用全新连接重试一次（只重试连接级错误，不重试命令超时）
+    if (POOLING && _allowRetry && isConnError(e)) {
+      evict(keyOf(server), ssh);
+      return runOnServer(server, command, cwd, timeoutMs, false);
+    }
+    throw e;
   } finally {
-    ssh.dispose();
+    if (!POOLING) { try { ssh.dispose(); } catch { /* ignore */ } }
+    else if (bad) evict(keyOf(server), ssh); // 出错/超时的连接不留池里
+    else release(server, ssh);               // 健康连接保持热，计划空闲关闭
   }
 }
 

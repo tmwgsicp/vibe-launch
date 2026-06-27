@@ -8,7 +8,7 @@ import { status } from "../core/status.js";
 import { onboard } from "../core/onboard.js";
 import { setupGit } from "../core/setup-git.js";
 import { getServerStats } from "../core/serverstats.js";
-import { runOnServer, connectSSH } from "../core/ssh.js";
+import { runOnServer, connectSSH, enableSshPool } from "../core/ssh.js";
 import { createTunnel, type TunnelHandle } from "../core/tunnel.js";
 import { recordDeploy, getHistory } from "../core/history.js";
 import { preDeploy } from "../core/predeploy.js";
@@ -45,6 +45,7 @@ function tryOpen(url: string): void {
 }
 
 export async function startUi(port = 7777, open = true): Promise<void> {
+  enableSshPool(); // 长驻进程：复用 SSH 连接，翻目录/刷状态近即时
   const server = http.createServer(async (req, res) => {
     const path = new URL(req.url || "/", `http://localhost:${port}`).pathname;
     const q = new URL(req.url || "/", `http://localhost:${port}`).searchParams;

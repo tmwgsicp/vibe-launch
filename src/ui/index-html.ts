@@ -594,11 +594,13 @@ async function delServer(k){if(!confirm('从清单删除服务器 '+k+'？(只�
   try{await api('/api/server/'+encodeURIComponent(k),{method:'DELETE'});toast('已删除');EXP.delete('s:'+k);await refreshAll();}catch(e){toast(e.message,'err');}}
 let BR={server:'',cwd:'',parent:''};
 function openBrowse(){const sv=$('p_server').value;if(!sv){toast('先选服务器','err');return;}BR.server=sv;brGo($('p_dir').value.trim()||'');}
-async function brGo(path){if(path==='PARENT')path=BR.parent;$('br_list').innerHTML='<div class="row" style="cursor:default"><span class="spin"></span></div>';if(!browseDlg.open)browseDlg.showModal();
-  try{const r=await api('/api/browse?server='+encodeURIComponent(BR.server)+(path?'&path='+encodeURIComponent(path):''));
+// 延迟转圈：ms 内拿到结果就不显示 spinner（连接池下大多很快），只有真慢才转圈，消除翻目录闪烁
+function delaySpin(id,ms){const t=setTimeout(()=>{const el=$(id);if(el)el.innerHTML='<div class="row" style="cursor:default"><span class="spin"></span></div>';},ms===undefined?220:ms);return ()=>clearTimeout(t);}
+async function brGo(path){if(path==='PARENT')path=BR.parent;if(!browseDlg.open)browseDlg.showModal();const stop=delaySpin('br_list');
+  try{const r=await api('/api/browse?server='+encodeURIComponent(BR.server)+(path?'&path='+encodeURIComponent(path):''));stop();
     BR.cwd=r.cwd;BR.parent=r.parent;$('br_cwd').textContent=r.cwd;
     $('br_list').innerHTML=r.dirs.length?r.dirs.map(d=>'<div class="row" onclick="brEnter(\''+esc(d).replace(/'/g,"&#39;")+'\')"><span class="nm">'+esc(d)+'</span><span class="sp"></span><span class="caret">▸</span></div>').join(''):'<div class="mt" style="padding:12px 6px">（无子目录，可直接选这个目录）</div>';
-  }catch(e){$('br_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
+  }catch(e){stop();$('br_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
 function brEnter(d){const sep=BR.cwd.endsWith('/')?'':'/';brGo(BR.cwd+sep+d);}
 function brPick(){$('p_dir').value=BR.cwd;browseDlg.close();}
 let FILE={project:'',name:''};
@@ -612,15 +614,15 @@ let FB={project:'',rel:'',root:''};
 function openFb(k){FB={project:k,rel:'',root:''};fbDlg.showModal();fbLoad();}
 function fbSize(n){return n>=1048576?(n/1048576).toFixed(1)+'M':n>=1024?(n/1024).toFixed(1)+'K':n+'B';}
 function fbGo(name){if(name==='UP')FB.rel=FB.rel.includes('/')?FB.rel.replace(/\/[^/]+$/,''):'';else FB.rel=(FB.rel?FB.rel+'/':'')+name;fbLoad();}
-async function fbLoad(){$('fb_list').innerHTML='<div class="row" style="cursor:default"><span class="spin"></span></div>';
-  try{const r=await api('/api/project-dir?project='+encodeURIComponent(FB.project)+(FB.rel?'&rel='+encodeURIComponent(FB.rel):''));
+async function fbLoad(){const stop=delaySpin('fb_list');
+  try{const r=await api('/api/project-dir?project='+encodeURIComponent(FB.project)+(FB.rel?'&rel='+encodeURIComponent(FB.rel):''));stop();
     FB.root=r.root;FB.rel=r.rel;$('fb_cwd').textContent=r.cwd;
     $('fb_list').innerHTML=r.entries.length?r.entries.map(e=>{
       if(e.type==='dir')return '<div class="row" onclick="fbGo(\''+esc(e.name).replace(/\x27/g,"&#39;")+'\')"><span class="nm">'+esc(e.name)+'/</span><span class="sp"></span><span class="caret">▸</span></div>';
       const rel=(FB.rel?FB.rel+'/':'')+e.name;
       return '<div class="row" style="cursor:default"><span class="cn" style="min-width:0">'+esc(e.name)+'</span><span class="mt">'+fbSize(e.size)+'</span><span class="sp"></span><button class="sm" onclick="openFilePath(\''+esc(FB.project)+'\',\''+esc(rel).replace(/\x27/g,"&#39;")+'\')">编辑</button></div>';
     }).join(''):'<div class="mt" style="padding:12px 6px">（空目录）</div>';
-  }catch(e){$('fb_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
+  }catch(e){stop();$('fb_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
 function fbUpload(){$('fb_file').click();}
 function fbDoUpload(){const f=$('fb_file').files[0];if(!f)return;
   if(f.size>5*1048576){toast('文件超过 5MB，请用 scp/rsync','err');$('fb_file').value='';return;}
@@ -644,8 +646,8 @@ function fmJoin(name){return (FM.cwd==='/'?'':FM.cwd)+'/'+name;}
 function fmGoInput(){const p=$('fm_path').value.trim();if(p)fmGo(p);}
 function fmUp(){fmGo(FM.parent);}
 function fmEnter(name){fmGo(fmJoin(name));}
-async function fmGo(path){$('fm_list').innerHTML='<div class="row" style="cursor:default"><span class="spin"></span></div>';
-  try{const r=await api('/api/fs/list?server='+encodeURIComponent(FM.server)+(path?'&path='+encodeURIComponent(path):''));
+async function fmGo(path){const stop=delaySpin('fm_list');
+  try{const r=await api('/api/fs/list?server='+encodeURIComponent(FM.server)+(path?'&path='+encodeURIComponent(path):''));stop();
     FM.cwd=r.cwd;FM.parent=r.parent;$('fm_cwd').textContent=FM.server+' : '+r.cwd;$('fm_path').value=r.cwd;
     $('fm_list').innerHTML=r.entries.length?r.entries.map(e=>{
       const acts='<button class="sm" onclick="event.stopPropagation();fmRename(\''+je(e.name)+'\')">改名</button>'
@@ -655,7 +657,7 @@ async function fmGo(path){$('fm_list').innerHTML='<div class="row" style="cursor
         +'<button class="sm" onclick="event.stopPropagation();fmEdit(\''+je(e.name)+'\')">编辑</button>'
         +'<button class="sm" onclick="event.stopPropagation();fmDownload(\''+je(e.name)+'\')">下载</button>'+acts+'</div>';
     }).join(''):'<div class="mt" style="padding:12px 6px">（空目录）</div>';
-  }catch(e){$('fm_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
+  }catch(e){stop();$('fm_list').innerHTML='<div class="mt" style="padding:12px 6px">'+esc(e.message)+'</div>';}}
 async function fmMkdir(){const n=(prompt('新建文件夹名称：')||'').trim();if(!n)return;if(n.includes('/')){toast('名称不能含 /','err');return;}
   try{await api('/api/fs/mkdir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:FM.server,path:fmJoin(n)})});toast('已新建');fmGo(FM.cwd);}catch(e){toast(e.message,'err');}}
 function fmUpload(){$('fm_file').click();}

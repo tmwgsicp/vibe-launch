@@ -13,12 +13,14 @@ import { preDeploy } from "./core/predeploy.js";
 import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
 import { listContainers, getContainerLogs } from "./core/containers.js";
+import { enableSshPool } from "./core/ssh.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
 }
 
 export async function startMcp() {
+  enableSshPool(); // 长驻进程：复用 SSH 连接
   const server = new McpServer({ name: "vibe-launch", version: "0.7.0" });
 
   server.tool(
