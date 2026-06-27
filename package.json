@@ -3,12 +3,17 @@
   "version": "0.6.0",
   "description": "一键把 AI 写的项目部署到你的服务器 — 轻量、agentless、AI 可调用（MCP + CLI）的多服务器部署编排器",
   "type": "module",
+  "author": "tmwgsicp",
+  "homepage": "https://github.com/tmwgsicp/vibe-launch#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/tmwgsicp/vibe-launch.git" },
+  "bugs": { "url": "https://github.com/tmwgsicp/vibe-launch/issues" },
   "bin": {
     "vibe-launch": "dist/cli.js",
     "vl": "dist/cli.js"
   },
   "files": [
     "dist",
+    "assets",
     "vibe-launch.example.yaml",
     "README.md"
   ],

@@ -40,6 +40,20 @@ export async function listContainers(config: Config, serverName: string): Promis
     .filter((c) => c.name);
 }
 
+/** 拉某容器的日志尾部（只读）。给 MCP / 诊断用；tail 限幅 1–2000 防爆。 */
+export async function getContainerLogs(
+  config: Config,
+  serverName: string,
+  name: string,
+  tail = 200
+): Promise<{ container: string; logs: string }> {
+  const server = getServerOf(config, serverName);
+  const n = assertName(name);
+  const t = Math.max(1, Math.min(2000, Math.floor(tail) || 200));
+  const r = await runOnServer(server, `docker logs --tail ${t} --timestamps ${q(n)} 2>&1 | tail -${t}`);
+  return { container: n, logs: (r.stdout || r.stderr || "(无输出)").trim() };
+}
+
 function assertName(name: string): string {
   const n = (name || "").trim();
   // 容器名只可能是 [A-Za-z0-9_.-]，任何别的字符都拒掉，杜绝命令注入

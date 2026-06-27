@@ -123,7 +123,18 @@ vibe-launch mcp
 | `restart <项目>` | `restart_project` |
 | `status [项目]` | `get_status` |
 
-> MCP 只暴露**安全幂等的动词**（list / status / deploy / restart / 登记）。盯实时日志、开隧道、回滚、文件管理这类交互 / 有风险的操作只在操作台（`ui`）里，不进 MCP —— 不让 AI 自动碰。
+外加 6 个**只读诊断**工具，让 AI 看见操作台能看到的数据，形成「部署 → 查健康 → 读日志 → 决策」闭环：
+
+| MCP 工具 | 作用 |
+|---|---|
+| `get_logs` | 拉容器日志尾部，定位健康检查失败原因 |
+| `preview_deploy` | 部署前看将拉取的新提交 diff |
+| `get_history` | 看部署 / 回滚历史 |
+| `get_server_stats` | 服务器 CPU / 内存 / 磁盘 / 负载指标 |
+| `list_containers` | 列出容器（含已停止） |
+| `check_ports` | 数据库端口暴露检测 |
+
+> MCP 只暴露**安全幂等的动词 + 只读诊断**。盯实时日志流、开隧道、回滚、删容器、文件读写这类交互 / 有副作用的操作只在操作台（`ui`）里，不进 MCP —— 不让 AI 自动碰。
 
 ## 🔗 让项目用 git 部署（一条命令搞定）
 

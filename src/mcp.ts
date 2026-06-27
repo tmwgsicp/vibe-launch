@@ -8,6 +8,11 @@ import { restart } from "./core/restart.js";
 import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
+import { getHistory } from "./core/history.js";
+import { preDeploy } from "./core/predeploy.js";
+import { checkExposure } from "./core/portcheck.js";
+import { getServerStats } from "./core/serverstats.js";
+import { listContainers, getContainerLogs } from "./core/containers.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
@@ -112,6 +117,72 @@ export async function startMcp() {
     async ({ project, repo, branch, adopt, token }) => {
       const r = await setupGit(loadConfig(), { project, repo, branch, adopt, token });
       return { ...text(r), isError: !r.success };
+    }
+  );
+
+  // ── 只读诊断工具：让 AI 看见操作台能看到的数据，形成"部署→查健康→读日志→决策"闭环 ──
+  server.tool(
+    "get_logs",
+    "拉某容器的日志尾部（只读）。健康检查失败、容器异常时用它定位原因。",
+    {
+      server: z.string().describe("服务器别名，见 list_projects"),
+      container: z.string().describe("容器名"),
+      tail: z.number().optional().describe("行数，默认 200，最多 2000"),
+    },
+    async ({ server, container, tail }) => {
+      try { return text(await getContainerLogs(loadConfig(), server, container, tail ?? 200)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "preview_deploy",
+    "部署前预览：列出本次部署将拉取的新提交（git fetch 后比对，只读、不动工作区）。决定要不要部署前用。",
+    { project: z.string().describe("项目名，见 list_projects") },
+    async ({ project }) => {
+      try { return text(await preDeploy(loadConfig(), project)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "get_history",
+    "看部署 / 回滚历史（只读）。省略 project 看全部。",
+    {
+      project: z.string().optional().describe("项目名；省略看全部"),
+      limit: z.number().optional().describe("条数，默认 20"),
+    },
+    async ({ project, limit }) => text(getHistory(project, limit ?? 20))
+  );
+
+  server.tool(
+    "get_server_stats",
+    "看服务器实时指标：CPU / 内存 / 磁盘 / 负载 / 容器数 / 运行时长（只读，一次 SSH 采集）。",
+    { server: z.string().describe("服务器别名") },
+    async ({ server }) => {
+      const c = loadConfig();
+      if (!c.servers[server]) return { ...text({ error: `服务器 ${server} 不存在` }), isError: true };
+      return text(await getServerStats(c.servers[server]));
+    }
+  );
+
+  server.tool(
+    "list_containers",
+    "列出服务器上全部容器（含已停止），看状态 / 镜像（只读）。",
+    { server: z.string().describe("服务器别名") },
+    async ({ server }) => {
+      try { return text(await listContainers(loadConfig(), server)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "check_ports",
+    "检测服务器上的数据库端口（PG / Redis / MySQL / Mongo / SQL Server）是否暴露公网（只读诊断，含针对性关闭指引）。",
+    { server: z.string().describe("服务器别名") },
+    async ({ server }) => {
+      try { return text(await checkExposure(loadConfig(), server)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
     }
   );
 
