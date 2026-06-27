@@ -19,7 +19,7 @@ function text(obj: unknown) {
 }
 
 export async function startMcp() {
-  const server = new McpServer({ name: "vibe-launch", version: "0.6.0" });
+  const server = new McpServer({ name: "vibe-launch", version: "0.7.0" });
 
   server.tool(
     "list_projects",

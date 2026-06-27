@@ -6,3 +6,5 @@ vibe-launch.yml
 .vibe-launch/
 *.log
 .DS_Store
+# 发布时临时换 README 留下的备份（postpack 会删，仅防中断遗留入库）
+.README.github.bak

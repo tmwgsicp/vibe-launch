@@ -146,7 +146,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="logo">vibe-launch<span>v0.6</span></div>
+    <div class="logo">vibe-launch<span>v0.7</span></div>
     <nav id="nav">
       <a data-v="overview" class="active">总览</a>
       <a data-v="servers">服务器</a>
@@ -213,6 +213,8 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <div class="acts"><button class="sm" onclick="brGo('PARENT')">↑ 上一级</button></div>
   <div id="br_list" class="list" style="border-top:none"></div>
 </div><div class="df"><button onclick="browseDlg.close()">取消</button><button class="primary" onclick="brPick()">选这个目录</button></div></dialog>
+<dialog id="ctDlg"><div class="dh" id="ct_title">容器详情</div><div class="dsub" id="ct_sub"></div><div class="db" id="ct_body"></div>
+<div class="df"><button onclick="ctDlg.close()">关闭</button></div></dialog>
 
 <dialog id="fileDlg" class="wide"><div class="dh" id="file_title">编辑文件</div><div class="dsub" id="file_sub"></div><div class="db">
   <textarea id="file_body" spellcheck="false" style="width:100%;min-height:44vh;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.5;resize:vertical"></textarea>
@@ -416,12 +418,13 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
     +'<button class="sm" onclick="event.stopPropagation();openGit(\''+esc(k)+'\')">转 git</button></div><div id="out-'+esc(k)+'"></div></div>';
   // 健康
   if(s&&s.reachable&&s.health&&s.health.length)d+='<div class="grp"><div class="glabel">健康检查</div>'+s.health.map(h=>'<div class="hist"><span class="dot '+(h.ok?'ok':'bad')+'"></span>'+esc(h.url.replace(/^https?:\/\//,''))+' · '+h.httpCode+'</div>').join('')+'</div>';
-  // 容器（日志/重启）
+  // 容器（日志/重启/停止/启动/详情）
   if(p.containers&&p.containers.length){d+='<div class="grp"><div class="glabel">容器</div>';
-    d+=p.containers.map(cn=>{const st=(s&&s.containers||[]).find(x=>x.name===cn);
-      return '<div class="citem"><span class="dot '+(st&&/running|up/i.test(st.state)?'ok':'bad')+'"></span><span class="cn">'+esc(cn)+'</span><span class="mt">'+(st?esc(st.state):'')+'</span><span class="sp"></span>'
+    d+=p.containers.map(cn=>{const st=(s&&s.containers||[]).find(x=>x.name===cn);const run=st&&/running|up/i.test(st.state);
+      return '<div class="citem"><span class="dot '+(run?'ok':'bad')+'"></span><span class="cn">'+esc(cn)+'</span><span class="mt">'+(st?esc(st.state):'')+'</span><span class="sp"></span>'
         +'<button class="sm" onclick="event.stopPropagation();showLogs(\''+esc(p.server)+'\',\''+esc(cn)+'\')">日志</button>'
-        +'<button class="sm" onclick="event.stopPropagation();restartC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">重启</button></div>';
+        +(run?'<button class="sm" onclick="event.stopPropagation();restartC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">重启</button><button class="sm" onclick="event.stopPropagation();stopC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">停止</button>':'<button class="sm" onclick="event.stopPropagation();startC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">启动</button>')
+        +'<button class="sm" onclick="event.stopPropagation();inspectC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">详情</button></div>';
     }).join('');d+='</div>';}
   // 配置文件 / .env（读写锁在项目目录树内，保存前自动备份 .vlbak）
   d+='<div class="grp"><div class="glabel">项目文件 / .env</div><div class="acts">'
@@ -472,7 +475,7 @@ function rSettings(){
   if(AUTOREF)h+=row('刷新间隔','',seg([['15','15 秒'],['30','30 秒'],['60','60 秒']],String(AUTOREF_SEC),'setIntervalSec'));
   h+=row('隐藏服务器 IP','列表里打码，点击单独显示',sw(HIDEIP,'setHideip'));
   h+='<h2 class="sec">关于</h2>';
-  h+=row('vibe-launch 0.6','纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
+  h+=row('vibe-launch 0.7','纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
   h+=row('配置文件','<span class="cfgp">'+esc(CONFIG._path||'')+'</span>','');
   h+='<h2 class="sec">联系与交流</h2>';
   const qr=(src,title,sub)=>'<figure class="qrcard"><img src="'+src+'" alt="'+title+'" onclick="qrZoom(this.src)">'
@@ -538,6 +541,19 @@ function exportLogs(){const blob=new Blob([LOG.lines.join('\n')],{type:'text/pla
 function closeLogs(){if(LOG.es){LOG.es.close();LOG.es=null;}logDlg.close();}
 async function restartC(sv,cn){if(!confirm('重启容器 '+cn+'？'))return;
   try{const r=await api('/api/container-restart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:sv,container:cn})});toast(r.ok?(cn+' 已重启'):'重启失败',r.ok?'':'err');}catch(e){toast(e.message,'err');}}
+async function startC(sv,cn){
+  try{await api('/api/container-start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:sv,container:cn})});toast(cn+' 已启动');loadCts(sv);loadStats();loadStatus().then(render);}catch(e){toast(e.message,'err');}}
+async function stopC(sv,cn){if(!confirm('停止容器 '+cn+'？\n会停掉这个运行中的服务。'))return;
+  try{await api('/api/container-stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:sv,container:cn})});toast(cn+' 已停止');loadCts(sv);loadStats();loadStatus().then(render);}catch(e){toast(e.message,'err');}}
+async function inspectC(sv,cn){$('ct_title').textContent=cn;$('ct_sub').textContent=sv;$('ct_body').innerHTML='<span class="mt"><span class="spin"></span> 加载中…</span>';ctDlg.showModal();
+  try{const d=await api('/api/container-inspect?server='+encodeURIComponent(sv)+'&container='+encodeURIComponent(cn),undefined,30000);
+    const sa=d.startedAt&&!String(d.startedAt).startsWith('0001')?new Date(d.startedAt).toLocaleString():'—';
+    const kv=[['镜像',d.image],['状态',d.state],['健康',d.health],['重启次数',d.restartCount],['创建',d.created?new Date(d.created).toLocaleString():'—'],['最近启动',sa],['容器 IP',d.ip||'—'],['启动命令',d.command||'—']];
+    let h='<div class="kv">'+kv.map(x=>'<div><span class="kk">'+esc(x[0])+'</span><span class="vv">'+esc(String(x[1]))+'</span></div>').join('')+'</div>';
+    h+='<div class="glabel" style="margin-top:14px">端口映射</div>'+(d.ports&&d.ports.length?d.ports.map(p=>'<div class="hist">'+esc(p)+'</div>').join(''):'<span class="mt">无</span>');
+    h+='<div class="glabel" style="margin-top:14px">挂载</div>'+(d.mounts&&d.mounts.length?d.mounts.map(m=>'<div class="hist" style="word-break:break-all">'+esc(m)+'</div>').join(''):'<span class="mt">无</span>');
+    $('ct_body').innerHTML=h;
+  }catch(e){$('ct_body').innerHTML='<span class="mt">'+esc(e.message)+'</span>';}}
 async function startTun(target,svc){try{const r=await api('/api/tunnel/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,service:svc})});toast('隧道已开 localhost:'+r.localPort);await loadTun();render();}catch(e){toast(e.message,'err');}}
 async function startTunPort(target,port){try{const r=await api('/api/tunnel/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target,remotePort:port})});toast('隧道已开 localhost:'+r.localPort);await loadTun();render();}catch(e){toast(e.message,'err');}}
 function startTunCustom(target){const p=prompt('转发服务器上的哪个端口？(如 1521 Oracle / 9200 ES)');if(!p)return;const port=parseInt(p,10);if(!port){toast('端口无效','err');return;}startTunPort(target,port);}
@@ -669,8 +685,9 @@ function ctsHtml(server){const a=CTS[server];if(!a)return '<span class="mt"><spa
     (list.length?list.map(c=>'<div class="citem"><span class="dot '+(c.running?'ok':'bad')+'"></span><span class="cn">'+esc(c.name)+'</span>'
       +'<span class="mt" style="color:var(--faint)">'+esc(c.state)+'</span><span class="sp"></span>'
       +(c.running
-        ?'<button class="sm" onclick="event.stopPropagation();showLogs(\''+je(server)+'\',\''+je(c.name)+'\')">日志</button><button class="sm" onclick="event.stopPropagation();restartC(\''+je(server)+'\',\''+je(c.name)+'\')">重启</button>'
-        :'<button class="sm" onclick="event.stopPropagation();delCt(\''+je(server)+'\',\''+je(c.name)+'\')">删除</button>')
+        ?'<button class="sm" onclick="event.stopPropagation();showLogs(\''+je(server)+'\',\''+je(c.name)+'\')">日志</button><button class="sm" onclick="event.stopPropagation();restartC(\''+je(server)+'\',\''+je(c.name)+'\')">重启</button><button class="sm" onclick="event.stopPropagation();stopC(\''+je(server)+'\',\''+je(c.name)+'\')">停止</button>'
+        :'<button class="sm" onclick="event.stopPropagation();startC(\''+je(server)+'\',\''+je(c.name)+'\')">启动</button><button class="sm" onclick="event.stopPropagation();delCt(\''+je(server)+'\',\''+je(c.name)+'\')">删除</button>')
+      +'<button class="sm" onclick="event.stopPropagation();inspectC(\''+je(server)+'\',\''+je(c.name)+'\')">详情</button>'
       +'</div>').join(''):'<span class="mt">无容器</span>');}
 async function loadCts(server){try{const a=await api('/api/containers?server='+encodeURIComponent(server),undefined,30000);CTS[server]={list:a};}catch(e){CTS[server]={list:[],error:e.message};}render();}
 async function delCt(server,name){if(!confirm('删除容器 '+name+' ？\n仅删除已停止的容器，不可恢复（镜像和数据卷不受影响）。'))return;

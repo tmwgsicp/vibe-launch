@@ -15,7 +15,7 @@ import { preDeploy } from "../core/predeploy.js";
 import { rollback } from "../core/rollback.js";
 import { checkExposure } from "../core/portcheck.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
-import { listContainers, removeContainer, pruneContainers } from "../core/containers.js";
+import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
 import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
 import { INDEX_HTML } from "./index-html.js";
 
@@ -216,6 +216,25 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         const sv = q.get("server");
         if (!sv || !c.servers[sv]) return json(res, 404, { error: "server not found" });
         return json(res, 200, await listContainers(c, sv));
+      }
+      // 启动已停止的容器
+      if (path === "/api/container-start" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.container) return json(res, 400, { error: "需要 server + container" });
+        return json(res, 200, await startContainer(c, b.server, b.container));
+      }
+      // 停止运行中的容器
+      if (path === "/api/container-stop" && req.method === "POST") {
+        const b = await readBody(req), c = loadConfig();
+        if (!b.server || !c.servers[b.server] || !b.container) return json(res, 400, { error: "需要 server + container" });
+        return json(res, 200, await stopContainer(c, b.server, b.container));
+      }
+      // 容器详情（inspect）
+      if (path === "/api/container-inspect" && req.method === "GET") {
+        const c = loadConfig();
+        const sv = q.get("server"), ct = q.get("container");
+        if (!sv || !c.servers[sv] || !ct) return json(res, 400, { error: "需要 server + container" });
+        return json(res, 200, await inspectContainer(c, sv, ct));
       }
       // 删除单个容器（不强删运行中的）
       if (path === "/api/container-remove" && req.method === "POST") {

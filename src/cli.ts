@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.6.0")
+  .version("0.7.0")
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {

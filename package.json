@@ -1,6 +1,6 @@
 {
   "name": "vibe-launch",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "一键把 AI 写的项目部署到你的服务器 — 轻量、agentless、AI 可调用（MCP + CLI）的多服务器部署编排器",
   "type": "module",
   "author": "tmwgsicp",
@@ -21,7 +21,9 @@
     "build": "tsc",
     "dev": "tsx src/cli.ts",
     "mcp": "tsx src/cli.ts mcp",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "prepack": "node scripts/readme-swap.mjs pack",
+    "postpack": "node scripts/readme-swap.mjs restore"
   },
   "keywords": [
     "deploy",

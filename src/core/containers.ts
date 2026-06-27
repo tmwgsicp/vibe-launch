@@ -61,6 +61,87 @@ function assertName(name: string): string {
   return n;
 }
 
+/** 启动一个已停止的容器（docker start）。 */
+export async function startContainer(
+  config: Config,
+  serverName: string,
+  name: string
+): Promise<{ ok: boolean; output: string }> {
+  const server = getServerOf(config, serverName);
+  const n = assertName(name);
+  const r = await runOnServer(server, `docker start ${q(n)} 2>&1`);
+  const out = (r.stdout || r.stderr || "").trim();
+  if (r.code !== 0) throw new Error(out || "启动失败");
+  return { ok: true, output: out };
+}
+
+/** 停止一个运行中的容器（docker stop，默认 10s 优雅期）。 */
+export async function stopContainer(
+  config: Config,
+  serverName: string,
+  name: string
+): Promise<{ ok: boolean; output: string }> {
+  const server = getServerOf(config, serverName);
+  const n = assertName(name);
+  const r = await runOnServer(server, `docker stop ${q(n)} 2>&1`);
+  const out = (r.stdout || r.stderr || "").trim();
+  if (r.code !== 0) throw new Error(out || "停止失败");
+  return { ok: true, output: out };
+}
+
+export interface ContainerDetail {
+  name: string;
+  image: string;
+  state: string;
+  created: string;
+  startedAt: string;
+  restartCount: number;
+  health: string;
+  command: string;
+  ports: string[];
+  mounts: string[];
+  ip: string;
+}
+
+/** 容器详情（docker inspect）：镜像 / 端口映射 / 挂载 / 重启次数 / 健康 / 命令。只读。 */
+export async function inspectContainer(
+  config: Config,
+  serverName: string,
+  name: string
+): Promise<ContainerDetail> {
+  const server = getServerOf(config, serverName);
+  const n = assertName(name);
+  const r = await runOnServer(server, `docker inspect ${q(n)} 2>&1`);
+  if (r.code !== 0) throw new Error((r.stdout || r.stderr || "inspect 失败").trim());
+  let arr: any;
+  try { arr = JSON.parse(r.stdout); } catch { throw new Error("解析 inspect 输出失败"); }
+  const d = arr && arr[0];
+  if (!d) throw new Error("未找到容器");
+  const st = d.State || {};
+  const portMap = (d.NetworkSettings && d.NetworkSettings.Ports) || {};
+  const ports = Object.entries(portMap).flatMap(([k, v]: [string, any]) =>
+    Array.isArray(v) && v.length ? v.map((b: any) => `${b.HostIp || "0.0.0.0"}:${b.HostPort} → ${k}`) : [`${k}（未映射）`]
+  );
+  const mounts = (d.Mounts || []).map(
+    (m: any) => `${m.Source || m.Name || ""} → ${m.Destination}${m.RW === false ? "（只读）" : ""}`
+  );
+  const nets = (d.NetworkSettings && d.NetworkSettings.Networks) || {};
+  const ip = Object.values(nets).map((x: any) => x && x.IPAddress).filter(Boolean).join(", ");
+  return {
+    name: (d.Name || "").replace(/^\//, ""),
+    image: (d.Config && d.Config.Image) || "",
+    state: st.Running ? "运行中" : st.Status || "",
+    created: d.Created || "",
+    startedAt: st.StartedAt || "",
+    restartCount: d.RestartCount || 0,
+    health: (st.Health && st.Health.Status) || "无",
+    command: ([] as string[]).concat(d.Config?.Entrypoint || [], d.Config?.Cmd || []).join(" "),
+    ports,
+    mounts,
+    ip,
+  };
+}
+
 /** 删除单个容器（不加 -f，正在运行的会被 docker 拒绝——避免误删跑着的服务）。 */
 export async function removeContainer(
   config: Config,
