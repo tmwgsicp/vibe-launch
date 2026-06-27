@@ -23,6 +23,8 @@ export interface ProjectConfig {
   health?: string[];
   /** 涉及的容器名，用于 status 看 docker ps */
   containers?: string[];
+  /** 部署命令超时（秒）。含构建（npm install / vitepress build / docker build）的部署会久，默认 600s。 */
+  deployTimeout?: number;
 }
 
 export interface Config {

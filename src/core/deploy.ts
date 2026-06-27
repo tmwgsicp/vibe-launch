@@ -1,7 +1,7 @@
 // 部署：SSH 到项目所在服务器，跑可插拔的 deploy 命令，再做健康检查
 import type { Config, DeployResult } from "./types.js";
 import { getProject } from "./config.js";
-import { runOnServer, curlOnServer } from "./ssh.js";
+import { runOnServer, waitHealthy } from "./ssh.js";
 
 function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n…(已截断 ${s.length - n} 字)` : s;
@@ -18,9 +18,9 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
   };
 
   try {
-    // 1. 跑部署命令（可插拔）
+    // 1. 跑部署命令（可插拔）。含构建的部署会久，超时默认 600s（可按项目 deployTimeout 调）。
     const cmd = project.dir ? `cd ${JSON.stringify(project.dir)} && ${project.deploy}` : project.deploy;
-    const run = await runOnServer(server, cmd);
+    const run = await runOnServer(server, cmd, undefined, (project.deployTimeout ?? 600) * 1000);
     result.output = truncate([run.stdout, run.stderr].filter(Boolean).join("\n").trim());
 
     if (run.code !== 0) {
@@ -34,10 +34,10 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
       result.gitRev = rev.stdout.trim() || undefined;
     }
 
-    // 3. 健康检查
+    // 3. 健康检查（带预热宽限：服务刚起来需要几秒，轮询到 2xx 或超时）
     let allOk = true;
     for (const url of project.health ?? []) {
-      const code = await curlOnServer(server, url);
+      const code = await waitHealthy(server, url);
       const ok = /^2\d\d$/.test(code);
       if (!ok) allOk = false;
       result.health.push({ url, httpCode: code, ok });

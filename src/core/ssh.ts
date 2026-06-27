@@ -179,6 +179,23 @@ export async function runOnServer(
   }
 }
 
+/** 轮询健康检查直到 2xx 或超时（默认最多 ~30s）。容器/服务启动有预热期，
+ * 部署命令一返回就单次 curl 会误判为失败——这里给个宽限重试，部署/重启共用。 */
+export async function waitHealthy(
+  server: ServerConfig,
+  url: string,
+  attempts = 15,
+  delayMs = 2000
+): Promise<string> {
+  let code = "000";
+  for (let i = 0; i < attempts; i++) {
+    code = await curlOnServer(server, url);
+    if (/^2\d\d$/.test(code)) return code;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return code;
+}
+
 /** 在服务器本地探一个健康检查 URL，返回 http_code（curl 优先，没装则退回 wget）。 */
 export async function curlOnServer(server: ServerConfig, url: string): Promise<string> {
   const u = JSON.stringify(url);

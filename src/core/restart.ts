@@ -3,7 +3,7 @@
 // 用途：容器假死、改了 .env / 配置要重新加载、deploy 后想单独重启某项目。
 import type { Config } from "./types.js";
 import { getProject } from "./config.js";
-import { runOnServer, curlOnServer } from "./ssh.js";
+import { runOnServer, waitHealthy } from "./ssh.js";
 
 export interface RestartResult {
   project: string;
@@ -42,7 +42,7 @@ export async function restart(config: Config, projectName: string): Promise<Rest
     // 健康检查（同 deploy：2xx 才算通过）
     let allHealthy = true;
     for (const url of project.health ?? []) {
-      const code = await curlOnServer(server, url);
+      const code = await waitHealthy(server, url);
       const ok = /^2\d\d$/.test(code);
       if (!ok) allHealthy = false;
       result.health.push({ url, httpCode: code, ok });
