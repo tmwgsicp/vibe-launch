@@ -21,7 +21,7 @@ export async function status(config: Config, projectName: string): Promise<Statu
         `cd ${JSON.stringify(project.dir)} 2>/dev/null && ` +
           `{ echo "H:$(git rev-parse --short HEAD 2>/dev/null)"; ` +
           `echo "B:$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
-          `echo "R:$(git remote get-url origin 2>/dev/null)"; } || true`
+          `echo "R:$(git config --get remote.origin.url 2>/dev/null)"; } || true`
       );
       for (const line of g.stdout.split("\n")) {
         if (line.startsWith("H:")) result.gitRev = line.slice(2).trim() || undefined;
