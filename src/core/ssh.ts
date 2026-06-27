@@ -44,6 +44,10 @@ export async function connectSSH(server: ServerConfig): Promise<NodeSSH> {
     port: server.port ?? 22,
     ...auth,
     readyTimeout: 20000,
+    // 保活：池里的长连接每 15s 发一次心跳，连发 3 次无应答即判定断开——
+    // 既防 NAT/服务器空闲超时悄悄掐断，也能让死连接被及时发现并重连。
+    keepaliveInterval: 15000,
+    keepaliveCountMax: 3,
   });
   return ssh;
 }
@@ -52,7 +56,12 @@ export async function connectSSH(server: ServerConfig): Promise<NodeSSH> {
 // 默认关闭（CLI 一次性命令不需要池，且保留连接会吊住事件循环导致进程不退出）。
 // 长驻进程（操作台 ui / MCP server）启动时调 enableSshPool() 打开：连一次保持热连接，
 // 后续命令只开 channel 不再重新握手——文件管理器翻目录、刷状态等从"每次几百毫秒握手"降到近即时。
-const POOL = new Map<string, { ssh: NodeSSH; idle?: NodeJS.Timeout }>();
+interface PoolEntry {
+  ssh?: NodeSSH;                 // 已就绪的连接
+  connecting?: Promise<NodeSSH>; // 正在握手（用于合并并发首连）
+  idle?: NodeJS.Timeout;         // 空闲关闭计时器
+}
+const POOL = new Map<string, PoolEntry>();
 let POOLING = false;
 const IDLE_MS = 5 * 60 * 1000;
 
@@ -72,25 +81,43 @@ function isAlive(ssh: NodeSSH): boolean {
 
 function evict(key: string, ssh?: NodeSSH): void {
   const ent = POOL.get(key);
-  if (ent && (!ssh || ent.ssh === ssh)) {
-    if (ent.idle) clearTimeout(ent.idle);
-    try { ent.ssh.dispose(); } catch { /* ignore */ }
-    POOL.delete(key);
-  }
+  if (!ent) return;
+  if (ssh && ent.ssh && ent.ssh !== ssh) return; // 已被换成新连接，别误删
+  if (ent.idle) clearTimeout(ent.idle);
+  if (ent.ssh) { try { ent.ssh.dispose(); } catch { /* ignore */ } }
+  POOL.delete(key);
 }
 
+/** 取一条可用连接。并发首连合并（singleflight）：同一服务器多个请求同时来时只握手一次，
+ * 其余等同一个 Promise——避免 overview/展开行并发拉数据时对同一台机器开出多条连接。 */
 async function acquire(server: ServerConfig): Promise<NodeSSH> {
   if (!POOLING) return connectSSH(server);
   const key = keyOf(server);
-  const ent = POOL.get(key);
-  if (ent && isAlive(ent.ssh)) {
-    if (ent.idle) { clearTimeout(ent.idle); ent.idle = undefined; }
-    return ent.ssh;
+  let ent = POOL.get(key);
+  if (ent) {
+    if (ent.ssh && isAlive(ent.ssh)) {
+      if (ent.idle) { clearTimeout(ent.idle); ent.idle = undefined; }
+      return ent.ssh;
+    }
+    if (ent.connecting) return ent.connecting; // 复用进行中的握手
+    evict(key); // 有 entry 但连接已死，清掉重连
   }
-  if (ent) evict(key);
-  const ssh = await connectSSH(server);
-  POOL.set(key, { ssh });
-  return ssh;
+  ent = {};
+  POOL.set(key, ent);
+  ent.connecting = connectSSH(server)
+    .then((ssh) => {
+      ent!.ssh = ssh;
+      ent!.connecting = undefined;
+      // 连接被对端/网络掐断（含 keepalive 判死）时自动移出池，下次 acquire 会重连
+      const raw: any = (ssh as any).connection;
+      if (raw && typeof raw.on === "function") {
+        raw.on("close", () => { if (POOL.get(key) === ent) POOL.delete(key); });
+        raw.on("end", () => { if (POOL.get(key) === ent) POOL.delete(key); });
+      }
+      return ssh;
+    })
+    .catch((e) => { if (POOL.get(key) === ent) POOL.delete(key); throw e; });
+  return ent.connecting;
 }
 
 function release(server: ServerConfig, ssh: NodeSSH): void {
@@ -100,8 +127,7 @@ function release(server: ServerConfig, ssh: NodeSSH): void {
   if (ent && ent.ssh === ssh) {
     if (ent.idle) clearTimeout(ent.idle);
     ent.idle = setTimeout(() => evict(key, ssh), IDLE_MS);
-    // 空闲计时器不应单独吊住进程退出
-    (ent.idle as any).unref?.();
+    (ent.idle as any).unref?.(); // 空闲计时器不单独吊住进程退出
   }
 }
 
