@@ -191,7 +191,8 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             if (line.length) res.write(`data: ${line.replace(/\r/g, "")}\n\n`);
           }
         };
-        const cleanup = () => { try { ssh.dispose(); } catch { /* ignore */ } };
+        let cleaned = false;
+        const cleanup = () => { if (cleaned) return; cleaned = true; try { ssh.dispose(); } catch { /* ignore */ } };
         conn.exec(
           `docker logs -f --tail ${tail} --timestamps ${JSON.stringify(ct)} 2>&1`,
           (err: Error | undefined, stream: any) => {
@@ -201,7 +202,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             stream.on("close", () => { res.end(); cleanup(); });
           }
         );
-        req.on("close", () => { try { conn.end(); } catch { /* ignore */ } cleanup(); });
+        req.on("close", () => { cleanup(); });
         return;
       }
       // 容器重启

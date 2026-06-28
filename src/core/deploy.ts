@@ -47,14 +47,14 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
       result.gitRev = rev.stdout.trim() || undefined;
     }
 
-    // 3. 健康检查（带预热宽限：服务刚起来需要几秒，轮询到 2xx 或超时）
-    let allOk = true;
-    for (const url of project.health ?? []) {
-      const code = await waitHealthy(server, url);
-      const ok = /^2\d\d$/.test(code);
-      if (!ok) allOk = false;
-      result.health.push({ url, httpCode: code, ok });
-    }
+    // 3. 健康检查（带预热宽限：服务刚起来需要几秒，轮询到 2xx 或超时）。多端点并行。
+    result.health = await Promise.all(
+      (project.health ?? []).map(async (url) => {
+        const code = await waitHealthy(server, url);
+        return { url, httpCode: code, ok: /^2\d\d$/.test(code) };
+      })
+    );
+    const allOk = result.health.every((x) => x.ok);
 
     result.success = allOk;
     if (!allOk) {

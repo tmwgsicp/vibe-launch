@@ -9,12 +9,13 @@ import { setupGit } from "./core/setup-git.js";
 import { deviceLogin, clearToken, getStoredToken } from "./core/github-auth.js";
 import { openTunnel } from "./core/tunnel.js";
 import { suggestDeploy } from "./core/scaffold.js";
+import { VERSION } from "./version.js";
 
 const program = new Command();
 program
   .name("vibe-launch")
   .description("一键把 AI 写的项目部署到你的服务器（MCP + CLI）")
-  .version("0.7.0")
+  .version(VERSION)
   .option("-c, --config <path>", "配置文件路径");
 
 function cfg() {

@@ -15,6 +15,7 @@ import { getServerStats } from "./core/serverstats.js";
 import { listContainers, getContainerLogs } from "./core/containers.js";
 import { enableSshPool, runOnServer } from "./core/ssh.js";
 import { suggestDeploy } from "./core/scaffold.js";
+import { VERSION } from "./version.js";
 
 function text(obj: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }] };
@@ -22,7 +23,7 @@ function text(obj: unknown) {
 
 export async function startMcp() {
   enableSshPool(); // 长驻进程：复用 SSH 连接
-  const server = new McpServer({ name: "vibe-launch", version: "0.7.0" });
+  const server = new McpServer({ name: "vibe-launch", version: VERSION });
 
   server.tool(
     "list_projects",

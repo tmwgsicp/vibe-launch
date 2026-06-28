@@ -31,22 +31,23 @@ export async function restart(config: Config, projectName: string): Promise<Rest
   }
 
   try {
-    let allRestarted = true;
-    for (const name of containers) {
-      const r = await runOnServer(server, `docker restart ${JSON.stringify(name)}`);
-      const ok = r.code === 0;
-      if (!ok) allRestarted = false;
-      result.restarted.push({ container: name, ok, output: (r.stdout || r.stderr || "").trim() });
-    }
+    // 多容器并行重启（互相独立；连接池在 MCP/UI 下复用连接，CLI 下各自短连接）
+    result.restarted = await Promise.all(
+      containers.map(async (name) => {
+        const r = await runOnServer(server, `docker restart ${JSON.stringify(name)}`);
+        return { container: name, ok: r.code === 0, output: (r.stdout || r.stderr || "").trim() };
+      })
+    );
+    const allRestarted = result.restarted.every((x) => x.ok);
 
-    // 健康检查（同 deploy：2xx 才算通过）
-    let allHealthy = true;
-    for (const url of project.health ?? []) {
-      const code = await waitHealthy(server, url);
-      const ok = /^2\d\d$/.test(code);
-      if (!ok) allHealthy = false;
-      result.health.push({ url, httpCode: code, ok });
-    }
+    // 健康检查并行（同 deploy：2xx 才算通过）
+    result.health = await Promise.all(
+      (project.health ?? []).map(async (url) => {
+        const code = await waitHealthy(server, url);
+        return { url, httpCode: code, ok: /^2\d\d$/.test(code) };
+      })
+    );
+    const allHealthy = result.health.every((x) => x.ok);
 
     result.success = allRestarted && allHealthy;
     if (!allRestarted) result.error = "部分容器重启失败";
