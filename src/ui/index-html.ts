@@ -146,7 +146,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
 <body>
 <div class="app">
   <aside class="side">
-    <div class="logo">vibe-launch<span>v0.7</span></div>
+    <div class="logo">vibe-launch<span id="vver">v0.8</span></div>
     <nav id="nav">
       <a data-v="overview" class="active">总览</a>
       <a data-v="servers">服务器</a>
@@ -277,7 +277,8 @@ function go(v){VIEW=v;
   render();
 }
 
-async function loadConfig(){CONFIG=await api('/api/config');}
+async function loadConfig(){CONFIG=await api('/api/config');
+  if(CONFIG._version){const e=$('vver');if(e)e.textContent='v'+String(CONFIG._version).split('.').slice(0,2).join('.');}}
 // 刷新都用 stale-while-revalidate：保留旧数据，新数据到了再静默替换，不闪 spinner。
 // 只有从来没加载过（无旧值）时才显示加载态。
 async function loadStatus(){try{const a=await api('/api/status');const m={};for(const s of a)m[s.project]=s;STATUS=m;}catch(e){toast(e.message,'err');}}
@@ -408,13 +409,19 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
   let d='<div class="detail">';
   // 部署配置（让原理可见：服务器目录 + 部署命令 + 是否 git 接管）
   const cfg=[['目录',p.dir||'(未配)'],['部署命令',p.deploy||'(未配)']];
+  if(p.preDeploy&&p.preDeploy.length)cfg.push(['部署前钩子',p.preDeploy.join('  ;  ')]);
+  if(p.postDeploy&&p.postDeploy.length)cfg.push(['部署后钩子',p.postDeploy.join('  ;  ')]);
+  if(p.frontend&&p.frontend.target)cfg.push(['前端产物',(p.frontend.dist||'?')+' → '+p.frontend.target]);
   if(s&&s.gitRepo)cfg.push(['代码仓库',s.gitRepo]);
   cfg.push(['Git 接管',(s&&s.gitRepo)?('是 · '+(s.gitBranch||'')+(s.gitRev?' @ '+s.gitRev:'')):'否（点"转 git"接管后可自动拉代码）']);
   d+='<div class="grp"><div class="glabel">部署配置</div><div class="kv">'+cfg.map(x=>'<div><span class="kk">'+x[0]+'</span><span class="vv">'+esc(x[1])+'</span></div>').join('')+'</div></div>';
   // 操作
   d+='<div class="grp"><div class="acts"><button class="primary sm" onclick="event.stopPropagation();doDeploy(\''+esc(k)+'\')">部署</button>'
+    +'<button class="sm" onclick="event.stopPropagation();doDeployDry(\''+esc(k)+'\')">预演</button>'
+    +(p.frontend&&p.frontend.target?'<button class="sm" onclick="event.stopPropagation();doFrontend(\''+esc(k)+'\')">前端部署</button>':'')
     +'<button class="sm" onclick="event.stopPropagation();doPredeploy(\''+esc(k)+'\')">看更新</button>'
     +'<button class="sm" onclick="event.stopPropagation();doStatus(\''+esc(k)+'\')">刷新状态</button>'
+    +((s&&s.gitRepo)?'<button class="sm" onclick="event.stopPropagation();doRollbackPrev(\''+esc(k)+'\')">回滚上一版</button>':'')
     +'<button class="sm" onclick="event.stopPropagation();openGit(\''+esc(k)+'\')">转 git</button></div><div id="out-'+esc(k)+'"></div></div>';
   // 健康
   if(s&&s.reachable&&s.health&&s.health.length)d+='<div class="grp"><div class="glabel">健康检查</div>'+s.health.map(h=>'<div class="hist"><span class="dot '+(h.ok?'ok':'bad')+'"></span>'+esc(h.url.replace(/^https?:\/\//,''))+' · '+h.httpCode+'</div>').join('')+'</div>';
@@ -426,6 +433,14 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
         +(run?'<button class="sm" onclick="event.stopPropagation();restartC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">重启</button><button class="sm" onclick="event.stopPropagation();stopC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">停止</button>':'<button class="sm" onclick="event.stopPropagation();startC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">启动</button>')
         +'<button class="sm" onclick="event.stopPropagation();inspectC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">详情</button></div>';
     }).join('');d+='</div>';}
+  // 穿透执行（在服务器 / 容器里跑即席命令：迁移 / psql / 临时脚本）
+  d+='<div class="grp"><div class="glabel">穿透执行</div>'
+    +'<div class="acts" style="flex-wrap:nowrap"><select id="runc-'+esc(k)+'" onclick="event.stopPropagation()" style="padding:6px 10px;font-size:13px;flex:none"><option value="">宿主机</option>'
+    +(p.containers||[]).map(cn=>'<option value="'+esc(cn)+'">容器 '+esc(cn)+'</option>').join('')+'</select>'
+    +'<input id="runi-'+esc(k)+'" placeholder="如 git log -3 / psql -U app -c \'select 1\'　回车执行" style="flex:1;min-width:160px;padding:6px 10px;font-size:13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace" onclick="event.stopPropagation()" onkeydown="if(event.key===\'Enter\'){event.stopPropagation();doRun(\''+esc(k)+'\')}">'
+    +'<button class="sm" style="flex:none" onclick="event.stopPropagation();doRun(\''+esc(k)+'\')">运行</button></div>'
+    +'<div class="mt" style="margin-top:6px;color:var(--faint)">选宿主机则直接在服务器跑；选容器则自动 docker exec 进去跑</div>'
+    +'<div id="runout-'+esc(k)+'"></div></div>';
   // 配置文件 / .env（读写锁在项目目录树内，保存前自动备份 .vlbak）
   d+='<div class="grp"><div class="glabel">项目文件 / .env</div>'
     +'<div class="acts"><button class="sm" onclick="event.stopPropagation();openFb(\''+esc(k)+'\')">浏览文件</button>'
@@ -476,7 +491,7 @@ function rSettings(){
   if(AUTOREF)h+=row('刷新间隔','',seg([['15','15 秒'],['30','30 秒'],['60','60 秒']],String(AUTOREF_SEC),'setIntervalSec'));
   h+=row('隐藏服务器 IP','列表里打码，点击单独显示',sw(HIDEIP,'setHideip'));
   h+='<h2 class="sec">关于</h2>';
-  h+=row('vibe-launch 0.7','纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
+  h+=row('vibe-launch '+(CONFIG._version||''),'纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
   h+=row('配置文件','<span class="cfgp">'+esc(CONFIG._path||'')+'</span>','');
   h+='<h2 class="sec">联系与交流</h2>';
   const qr=(src,title,sub)=>'<figure class="qrcard"><img src="'+src+'" alt="'+title+'" onclick="qrZoom(this.src)">'
@@ -492,10 +507,40 @@ function qrZoom(src){const o=document.createElement('div');o.className='qrzoom';
 async function doStatus(k){try{const a=await api('/api/status?project='+encodeURIComponent(k));STATUS[k]=a[0];render();}catch(e){toast(e.message,'err');}}
 async function doDeploy(k){const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 部署中…</pre>';
   try{const r=await api('/api/deploy/'+encodeURIComponent(k),{method:'POST'},0);
-    if(out){let html='<pre class="out">'+(r.success?'成功':'失败')+(r.gitRev?' @'+esc(r.gitRev):'')+'\n'+esc(r.output||'')+(r.error?'\n'+esc(r.error):'')+'</pre>';
+    if(out){const hk=(r.hooks&&r.hooks.length)?r.hooks.map(h=>'['+h.phase+'Deploy] '+esc(h.cmd)+' → '+(h.code===0?'✓':'✗ 退出 '+h.code)).join('\n')+'\n':'';
+      const wn=(r.warnings&&r.warnings.length)?'\n⚠ 健康过了但日志疑似报错：\n'+r.warnings.map(w=>esc(w.container)+': '+esc(w.sample)).join('\n'):'';
+      let html='<pre class="out">'+(r.success?'成功':'失败')+(r.gitRev?' @'+esc(r.gitRev):'')+'\n'+hk+esc(r.output||'')+wn+(r.error?'\n'+esc(r.error):'')+'</pre>';
       if(r.failLogs&&r.failLogs.length)html+=r.failLogs.map(f=>'<div class="glabel" style="margin-top:10px">'+esc(f.container)+' · 最后日志</div><pre class="out" style="margin-top:6px">'+esc(f.logs||'(空)')+'</pre>').join('');
       out.innerHTML=html;}
     toast(k+(r.success?' 部署成功':' 部署失败'),r.success?'':'err');await Promise.all([doStatus(k),0]);loadHist(k);
+  }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+// 预演：只看编排计划（含 pre/postDeploy 钩子），不动服务器
+async function doDeployDry(k){const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 预演中…</pre>';
+  try{const r=await api('/api/deploy/'+encodeURIComponent(k)+'?dryRun=1',{method:'POST'},60000);
+    if(out)out.innerHTML='<pre class="out">'+esc(r.output||'(无计划)')+'</pre>';
+  }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+// 前端一体：本地 build → 传产物 → 原子替换 → 重启（走项目 frontend 配置）
+async function doFrontend(k){if(!confirm('前端部署 '+k+'？\n会在你本地 build 并把产物上传替换到服务器，然后重启。'))return;
+  const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 前端部署中（本地 build + 上传，可能较久）…</pre>';
+  try{const r=await api('/api/deploy/'+encodeURIComponent(k)+'?frontend=1',{method:'POST'},0);
+    const hl=(r.health&&r.health.length)?'\n'+r.health.map(h=>'健康 '+esc(h.url.replace(/^https?:\/\//,''))+' → '+h.httpCode+(h.ok?' ✓':' ✗')).join('\n'):'';
+    if(out)out.innerHTML='<pre class="out">'+(r.success?'前端已上线':'前端部署有问题')+'\n'+esc((r.steps||[]).join('\n'))+hl+(r.error?'\n'+esc(r.error):'')+'</pre>';
+    toast(k+(r.success?' 前端已上线':' 前端有问题'),r.success?'':'err');await doStatus(k);loadHist(k);
+  }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+// 回滚上一版（HEAD~1）：不带 rev，core 默认回退一个提交
+async function doRollbackPrev(k){if(!confirm('把 '+k+' 回滚到上一个提交(HEAD~1)？\n会 git reset --hard 并重启容器（不跑部署命令）。'))return;
+  const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 回滚中…</pre>';
+  try{const r=await api('/api/rollback/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+    if(out)out.innerHTML='<pre class="out">'+(r.success?'回滚成功':'回滚完成（有问题）')+(r.gitRev?' @'+esc(r.gitRev):'')+'\n'+esc(r.output||'')+(r.error?'\n'+esc(r.error):'')+'</pre>';
+    toast(k+(r.success?' 已回滚上一版':' 回滚有问题'),r.success?'':'err');await doStatus(k);loadHist(k);
+  }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+// 穿透执行：在服务器 / 容器里跑即席命令
+async function doRun(k){const inp=$('runi-'+k);if(!inp)return;const command=inp.value.trim();if(!command){toast('先输入命令','err');return;}
+  const container=$('runc-'+k).value||undefined;const out=$('runout-'+k);
+  if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 执行中…</pre>';
+  try{const r=await api('/api/run/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,container})},0);
+    const body=[r.stdout||'',r.stderr?'[stderr]\n'+r.stderr:''].filter(Boolean).join('\n')||'(无输出)';
+    if(out)out.innerHTML='<pre class="out">'+(r.code===0?'':'退出码 '+r.code+'\n')+esc(body)+'</pre>';
   }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function doPredeploy(k){const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 拉取远端…</pre>';
   try{const r=await api('/api/predeploy?project='+encodeURIComponent(k),undefined,60000);

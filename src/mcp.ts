@@ -34,20 +34,26 @@ export async function startMcp() {
 
   server.tool(
     "deploy_project",
-    "部署指定项目：SSH 到它所在服务器，跑配置好的部署命令，再做健康检查。返回成功与否、输出、git 版本、健康检查结果。",
-    { project: z.string().describe("项目名，见 list_projects") },
-    async ({ project }) => {
-      const r = await deploy(loadConfig(), project);
+    "部署指定项目：SSH 到它所在服务器，（有配则先跑 preDeploy 钩子）跑部署命令、（postDeploy 钩子）再做健康检查。返回成功与否、输出、钩子结果、git 版本、健康检查结果。dryRun=true 时只返回编排计划、不实际执行。",
+    {
+      project: z.string().describe("项目名，见 list_projects"),
+      dryRun: z.boolean().optional().describe("只返回执行计划（含 pre/postDeploy 钩子），不在服务器上跑任何命令"),
+    },
+    async ({ project, dryRun }) => {
+      const r = await deploy(loadConfig(), project, { dryRun });
       return { ...text(r), isError: !r.success };
     }
   );
 
   server.tool(
     "restart_project",
-    "重启项目配置的容器（docker restart）再做健康检查。只重启、不拉代码、不构建 —— 幂等安全。用于容器假死、改了 .env/配置要重新加载。返回每个容器的重启结果 + 健康检查。",
-    { project: z.string().describe("项目名，见 list_projects") },
-    async ({ project }) => {
-      const r = await restart(loadConfig(), project);
+    "重启项目配置的容器（docker restart）再做健康检查。只重启、不拉代码、不构建 —— 幂等安全。用于容器假死、改了 .env/配置要重新加载。only 可只重启子集（如 poller 改动只重 worker）。返回每个容器的重启结果 + 健康检查。",
+    {
+      project: z.string().describe("项目名，见 list_projects"),
+      only: z.array(z.string()).optional().describe("只重启这些容器（须是项目 containers 的子集），省略则全部"),
+    },
+    async ({ project, only }) => {
+      const r = await restart(loadConfig(), project, { only });
       return { ...text(r), isError: !r.success };
     }
   );

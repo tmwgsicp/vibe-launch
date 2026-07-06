@@ -13,6 +13,9 @@ import { createTunnel, type TunnelHandle } from "../core/tunnel.js";
 import { getHistory } from "../core/history.js";
 import { preDeploy } from "../core/predeploy.js";
 import { rollback } from "../core/rollback.js";
+import { runOnProject } from "../core/run.js";
+import { deployFrontend } from "../core/frontend.js";
+import { VERSION } from "../version.js";
 import { checkExposure } from "../core/portcheck.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
 import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
@@ -59,7 +62,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 清单
       if (path === "/api/config" && req.method === "GET") {
         const c = loadConfig();
-        return json(res, 200, { servers: c.servers, projects: c.projects, _path: getConfigPath() });
+        return json(res, 200, { servers: c.servers, projects: c.projects, _path: getConfigPath(), _version: VERSION });
       }
       // MCP 能力信息（给 AI 客户端接入用）
       if (path === "/api/mcp-info" && req.method === "GET") {
@@ -78,7 +81,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
             { name: "get_server_stats", desc: "服务器 CPU/内存/磁盘/负载指标（只读）" },
             { name: "list_containers", desc: "列出容器含已停止（只读）" },
             { name: "check_ports", desc: "数据库端口暴露检测（只读诊断）" },
-            { name: "run_command", desc: "在服务器跑任意命令（AI 灵活部署的万能原语）" },
+            { name: "run_command", desc: "在服务器跑任意命令，带 container 则 docker exec 进容器（AI 灵活部署的万能原语）" },
             { name: "suggest_deploy", desc: "探测项目类型，给出推荐壳子部署命令（脚手架）" },
           ],
           config: { mcpServers: { "vibe-launch": { command: "vibe-launch", args: ["mcp"] } } },
@@ -106,10 +109,22 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         if (!name || !c.servers[name]) return json(res, 404, { error: "server not found" });
         return json(res, 200, await getServerStats(c.servers[name]));
       }
-      // 部署（记历史）
+      // 部署（记历史）。?frontend=1 走前端一体部署；?dryRun=1 只返回执行计划（含钩子）
       if (path.startsWith("/api/deploy/") && req.method === "POST") {
         const name = decodeURIComponent(path.slice("/api/deploy/".length));
-        const r = await deploy(loadConfig(), name); // 历史已在 core deploy() 内记录
+        if (q.get("frontend") === "1") return json(res, 200, { __frontend: true, ...(await deployFrontend(loadConfig(), name)) });
+        const r = await deploy(loadConfig(), name, { dryRun: q.get("dryRun") === "1" }); // 历史已在 core deploy() 内记录
+        return json(res, 200, r);
+      }
+      // 穿透执行：在项目所在服务器跑即席命令（container 则 docker exec 进容器）
+      if (path.startsWith("/api/run/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/run/".length));
+        const b = await readBody(req);
+        const r = await runOnProject(loadConfig(), name, b.command || "", {
+          container: b.container || undefined,
+          cwd: b.cwd || undefined,
+          timeoutMs: Math.min(600, Math.max(1, Number(b.timeout) || 120)) * 1000,
+        });
         return json(res, 200, r);
       }
       // 部署历史
