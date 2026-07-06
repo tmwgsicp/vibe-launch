@@ -25,6 +25,27 @@ export interface ProjectConfig {
   containers?: string[];
   /** 部署命令超时（秒）。含构建（npm install / vitepress build / docker build）的部署会久，默认 600s。 */
   deployTimeout?: number;
+  /** 部署前钩子（deploy 命令前跑，在 dir 内，逐条串行）：DB 迁移 / 备份 / 建索引。任一失败即中止，不部署。 */
+  preDeploy?: string[];
+  /** 部署后钩子（deploy 命令成功后跑，在 dir 内，逐条串行）：烟测 / 额外校验。失败即判部署失败。 */
+  postDeploy?: string[];
+  /** 前端一体部署（vl deploy --frontend）：本地 build → 传产物 → 原子替换 → 重启 web。 */
+  frontend?: FrontendConfig;
+  /** vl env set 默认改的 .env 绝对路径（不填则用 <dir>/.env）。 */
+  envFile?: string;
+}
+
+export interface FrontendConfig {
+  /** 本地构建命令（在你自己机器上跑），如 "npm run build"。不填则跳过构建、直接传现成产物。 */
+  build?: string;
+  /** 跑 build / 找 dist 的本地根目录，默认当前工作目录。 */
+  cwd?: string;
+  /** 本地构建产物目录（相对 cwd 或绝对），如 ".output/public" / "dist"。 */
+  dist: string;
+  /** 服务器上的目标目录（绝对路径）：产物上传后原子替换到这里。 */
+  target: string;
+  /** 换完产物后要重启的容器（如 web / nginx）。 */
+  restart?: string[];
 }
 
 export interface Config {
@@ -44,6 +65,8 @@ export interface DeployResult {
   failLogs?: { container: string; state?: string; logs: string }[];
   /** 部署"成功"但日志里发现疑似报错（健康端点过了≠应用没坏，比如模板 500/连接异常） */
   warnings?: { container: string; sample: string }[];
+  /** pre/postDeploy 钩子的执行记录（有配才有），便于回看编排每步结果。 */
+  hooks?: { phase: "pre" | "post"; cmd: string; code: number | null; output: string }[];
   error?: string;
 }
 

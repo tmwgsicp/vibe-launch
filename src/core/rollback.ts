@@ -9,18 +9,35 @@ const q = (s: string) => JSON.stringify(s);
 // 只接受短/长 commit hash 或 HEAD~N，挡命令注入
 const validRev = (rev: string) => /^[0-9a-fA-F]{4,40}$/.test(rev) || /^HEAD~\d+$/.test(rev);
 
-export async function rollback(config: Config, projectName: string, rev: string): Promise<DeployResult> {
+export async function rollback(
+  config: Config,
+  projectName: string,
+  rev?: string,
+  opts: { dryRun?: boolean } = {}
+): Promise<DeployResult> {
   const { project, server, serverName } = getProject(config, projectName);
   const result: DeployResult = { project: projectName, server: serverName, success: false, output: "", health: [] };
   try {
     if (!project.dir) throw new Error("项目没配工作目录");
-    if (!rev || !validRev(rev)) throw new Error("非法的版本号（只接受 commit hash 或 HEAD~N）");
+    // 不传版本 = 回退上一个提交（秒回滚最常用）
+    const target = rev && rev.trim() ? rev.trim() : "HEAD~1";
+    if (!validRev(target)) throw new Error("非法的版本号（只接受 commit hash 或 HEAD~N）");
 
     const isGit = (await runOnServer(server, `test -d ${q(project.dir + "/.git")} && echo yes || echo no`)).stdout.trim();
     if (isGit !== "yes") throw new Error('非 git 项目，无法回滚（先用"转 git"接管）');
 
     const from = (await runOnServer(server, `cd ${q(project.dir)} && git rev-parse --short HEAD`)).stdout.trim();
-    const reset = await runOnServer(server, `cd ${q(project.dir)} && git reset --hard ${rev}`);
+    // 先解析目标版本（校验存在），dry-run 时只报"将回滚到哪"，不动工作区
+    const resolved = (await runOnServer(server, `cd ${q(project.dir)} && git rev-parse --short ${target} 2>/dev/null || echo __BAD__`)).stdout.trim();
+    if (!resolved || resolved === "__BAD__") throw new Error(`目标版本 ${target} 解析失败（不存在？）`);
+    if (opts.dryRun) {
+      result.gitRev = resolved;
+      const cts = (project.containers ?? []).join(", ") || "（无容器）";
+      result.output = `dry-run：将回滚 ${from} → ${resolved}（${target}），git reset --hard 后重启 ${cts}。未执行。`;
+      result.success = true;
+      return result;
+    }
+    const reset = await runOnServer(server, `cd ${q(project.dir)} && git reset --hard ${target}`);
     if (reset.code !== 0) {
       result.error = `git reset 失败：${(reset.stderr || reset.stdout).trim()}`;
       return result;
@@ -51,6 +68,8 @@ export async function rollback(config: Config, projectName: string, rev: string)
     result.error = (e as Error).message;
     return result;
   } finally {
-    recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "rollback" });
+    // dry-run 不记历史（没真回滚）
+    if (!opts.dryRun)
+      recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "rollback" });
   }
 }

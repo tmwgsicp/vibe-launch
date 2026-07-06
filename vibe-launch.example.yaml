@@ -29,3 +29,26 @@ projects:
   #   server: myserver
   #   dir: /path/to/foo
   #   deploy: docker compose pull && docker compose up -d
+
+  # ── 进阶：复杂运维编排（都是可选项，按需加）──
+  # fullstack:
+  #   server: myserver
+  #   dir: /path/to/app
+  #   deploy: git pull && docker restart app-api app-worker
+  #   containers: [app-api, app-worker]
+  #   health: [http://127.0.0.1:8000/health]
+  #   # 部署前钩子（pull 前跑，在 dir 内，逐条串行）：DB 迁移 / 备份 / 建索引。任一失败即中止，不部署。
+  #   preDeploy:
+  #     - docker exec app-api python manage.py migrate --noinput
+  #   # 部署后钩子（deploy 成功后跑）：烟测 / 额外校验。失败即判部署失败。
+  #   postDeploy:
+  #     - curl -fsS http://127.0.0.1:8000/api/smoke
+  #   # vl env set 默认改这个 .env（不填则 <dir>/.env）
+  #   envFile: /path/to/app/.env
+  #   # 前端一体部署（vl deploy fullstack --frontend）：本地 build → 传产物 → 原子替换 → 重启
+  #   frontend:
+  #     build: npm run build          # 在你本地跑
+  #     cwd: ./web                     # 本地项目根（默认当前目录）
+  #     dist: .output/public           # 本地构建产物目录
+  #     target: /var/www/app           # 服务器上的目标目录（绝对路径，原子替换）
+  #     restart: [app-web]             # 换完重启的容器

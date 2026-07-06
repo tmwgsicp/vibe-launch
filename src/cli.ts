@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { createInterface } from "node:readline";
 import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
 import { restart } from "./core/restart.js";
@@ -9,7 +10,30 @@ import { setupGit } from "./core/setup-git.js";
 import { deviceLogin, clearToken, getStoredToken } from "./core/github-auth.js";
 import { openTunnel } from "./core/tunnel.js";
 import { suggestDeploy } from "./core/scaffold.js";
+import { runOnProject } from "./core/run.js";
+import { rollback } from "./core/rollback.js";
+import { deployFrontend } from "./core/frontend.js";
+import { setEnv } from "./core/env.js";
+import { watch } from "./core/watch.js";
 import { VERSION } from "./version.js";
+
+/** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
+function confirm(prompt: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (a) => { rl.close(); resolve(/^y(es)?$/i.test(a.trim())); });
+  });
+}
+
+/** 解析时长："30m" / "90s" / "1h" → 毫秒；无单位当分钟；解析不了默认 10 分钟。 */
+function parseDuration(s: string): number {
+  const m = String(s).trim().match(/^(\d+)\s*([smh])?$/i);
+  if (!m) return 10 * 60 * 1000;
+  const n = Number(m[1]);
+  const u = (m[2] || "m").toLowerCase();
+  return n * (u === "s" ? 1000 : u === "h" ? 3600000 : 60000);
+}
 
 const program = new Command();
 program
@@ -37,16 +61,48 @@ program
 
 program
   .command("deploy <project>")
-  .description("部署指定项目")
-  .action(async (project: string) => {
+  .description("部署指定项目（pre/postDeploy 钩子按配置自动编排）")
+  .option("--frontend", "前端一体部署：本地 build → 传产物 → 原子替换 → 重启（走 project.frontend 配置）")
+  .option("--dry-run", "只打印执行计划（含钩子），不在服务器上跑任何命令")
+  .option("--watch [cmd]", "部署成功后持续盯：带命令则跑该命令(退出码0=健康)，不带则轮询 health")
+  .option("--duration <dur>", "--watch 的观察时长，如 30m / 90s / 1h，默认 10m", "10m")
+  .action(async (project: string, opts) => {
+    // 前端一体：走独立通道（本地 build + 传产物），不跑服务器 deploy 命令
+    if (opts.frontend) {
+      console.log(`==> 前端部署 ${project} …`);
+      const r = await deployFrontend(cfg(), project);
+      for (const s of r.steps) console.log("  " + s);
+      for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
+      if (r.success) console.log(`✅ ${project} 前端已上线`);
+      else { console.error(`❌ 前端部署失败：${r.error ?? "未知"}`); process.exitCode = 1; }
+      return;
+    }
+
     console.log(`==> 部署 ${project} …`);
-    const r = await deploy(cfg(), project);
+    const r = await deploy(cfg(), project, { dryRun: opts.dryRun });
     if (r.output) console.log(r.output);
+    if (opts.dryRun) return;
+    for (const hk of r.hooks ?? []) console.log(`  [${hk.phase}Deploy] ${hk.cmd} → ${hk.code === 0 ? "✓" : "✗ 退出 " + hk.code}`);
     for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
+    if (r.warnings?.length) {
+      console.log("  ⚠ 健康过了但日志疑似报错：");
+      for (const w of r.warnings) console.log(`    ${w.container}: ${w.sample}`);
+    }
     if (r.success) {
       console.log(`✅ ${project} 部署成功${r.gitRev ? " @ " + r.gitRev : ""}`);
+      // --watch：部署后持续盯一段时间（灰度收尾）
+      if (opts.watch !== undefined) {
+        console.log(`\n==> 盯 ${opts.duration}（Ctrl+C 停）…`);
+        const w = await watch(cfg(), project, {
+          cmd: typeof opts.watch === "string" ? opts.watch : undefined,
+          durationMs: parseDuration(opts.duration),
+          onTick: (l) => console.log("  " + l),
+        });
+        console.log(w.failures ? `⚠ 观察期内 ${w.failures}/${w.ticks} 次异常，考虑 vl rollback ${project}` : `✅ 观察期 ${w.ticks} 次全绿`);
+      }
     } else {
       console.error(`❌ ${project} 部署失败：${r.error ?? "未知"}`);
+      if (r.failLogs?.length) for (const f of r.failLogs) console.error(`  容器 ${f.container} [${f.state}]:\n${f.logs}`);
       process.exitCode = 1;
     }
   });
@@ -54,9 +110,11 @@ program
 program
   .command("restart <project>")
   .description("重启项目容器（docker restart）+ 健康检查；只重启不拉代码")
-  .action(async (project: string) => {
-    console.log(`==> 重启 ${project} …`);
-    const r = await restart(cfg(), project);
+  .option("--only <list>", "只重启这些容器（逗号分隔），其余不动（如改 poller 只重 worker）")
+  .action(async (project: string, opts) => {
+    const only = opts.only ? String(opts.only).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
+    console.log(`==> 重启 ${project}${only ? " [" + only.join(", ") + "]" : ""} …`);
+    const r = await restart(cfg(), project, { only });
     for (const c of r.restarted) console.log(`  ${c.container}: ${c.ok ? "✓ 已重启" : "✗ " + c.output}`);
     for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
     if (r.success) {
@@ -65,6 +123,89 @@ program
       console.error(`❌ ${project} 重启失败：${r.error ?? "未知"}`);
       process.exitCode = 1;
     }
+  });
+
+program
+  .command("run <project> <cmd>")
+  .description("在项目所在服务器上跑即席命令（自动带 host/key）。--container 则 docker exec 进容器跑")
+  .option("--container <name>", "在指定容器内执行（自动 docker exec）")
+  .option("--cwd <dir>", "工作目录（不填则项目 dir；容器模式下为容器内 -w 目录）")
+  .option("--timeout <sec>", "超时秒数，默认 120（构建/迁移可调大）", "120")
+  .action(async (project: string, cmd: string, opts) => {
+    const r = await runOnProject(cfg(), project, cmd, {
+      container: opts.container,
+      cwd: opts.cwd,
+      timeoutMs: Math.max(1, Number(opts.timeout) || 120) * 1000,
+    });
+    if (r.stdout) process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
+    if (r.stderr) process.stderr.write(r.stderr.endsWith("\n") ? r.stderr : r.stderr + "\n");
+    if (r.code !== 0) {
+      console.error(`(退出码 ${r.code})`);
+      process.exitCode = r.code ?? 1;
+    }
+  });
+
+program
+  .command("rollback <project> [rev]")
+  .description("回滚到上一个（或指定）提交并重启 + 健康检查。危险操作，默认二次确认")
+  .option("--dry-run", "只显示将回滚到哪个版本，不执行")
+  .option("-y, --yes", "跳过二次确认")
+  .action(async (project: string, rev: string | undefined, opts) => {
+    if (opts.dryRun) {
+      const r = await rollback(cfg(), project, rev, { dryRun: true });
+      console.log(r.output || r.error || "");
+      if (r.error) process.exitCode = 1;
+      return;
+    }
+    if (!opts.yes) {
+      const ok = await confirm(`确认回滚 ${project} 到 ${rev || "HEAD~1"}？会 git reset --hard + 重启容器 [y/N] `);
+      if (!ok) { console.log("已取消（非交互环境请加 -y）"); return; }
+    }
+    console.log(`==> 回滚 ${project} …`);
+    const r = await rollback(cfg(), project, rev);
+    if (r.output) console.log(r.output);
+    for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
+    if (r.success) console.log(`✅ ${project} 已回滚${r.gitRev ? " @ " + r.gitRev : ""}`);
+    else { console.error(`❌ 回滚失败：${r.error ?? "未知"}`); process.exitCode = 1; }
+  });
+
+program
+  .command("env <project> <action> [pairs...]")
+  .description("管理远端 .env：env <项目> set KEY=VAL [KEY2=VAL2 …]（改前自动备份）")
+  .option("--restart", "改完后重启项目容器 + 健康检查")
+  .option("--file <path>", "指定 .env 绝对路径（默认 <dir>/.env 或 project.envFile）")
+  .option("--dry-run", "只显示将改哪些键，不写入")
+  .option("-y, --yes", "跳过二次确认")
+  .action(async (project: string, action: string, pairs: string[], opts) => {
+    if (action !== "set") {
+      console.error("目前只支持：vl env <项目> set KEY=VAL …");
+      process.exitCode = 1;
+      return;
+    }
+    const kv: Record<string, string> = {};
+    for (const p of pairs) {
+      const i = p.indexOf("=");
+      if (i <= 0) { console.error(`格式应为 KEY=VAL：${p}`); process.exitCode = 1; return; }
+      kv[p.slice(0, i)] = p.slice(i + 1);
+    }
+    if (opts.dryRun) {
+      const r = await setEnv(cfg(), project, kv, { file: opts.file, dryRun: true });
+      if (r.error) { console.error("❌ " + r.error); process.exitCode = 1; return; }
+      console.log(`将写入 ${r.file}：`);
+      for (const c of r.changed) console.log(`  ${c.action === "add" ? "+" : "~"} ${c.key}`);
+      return;
+    }
+    if (!opts.yes) {
+      const ok = await confirm(`确认改 ${project} 的 .env（${Object.keys(kv).join(", ")}）${opts.restart ? " 并重启" : ""}？[y/N] `);
+      if (!ok) { console.log("已取消（非交互环境请加 -y）"); return; }
+    }
+    const r = await setEnv(cfg(), project, kv, { file: opts.file, restart: opts.restart });
+    if (!r.success) { console.error(`❌ ${r.error ?? "未知"}`); process.exitCode = 1; return; }
+    console.log(`✅ 已更新 ${r.file}`);
+    for (const c of r.changed) console.log(`  ${c.action === "add" ? "+" : "~"} ${c.key}`);
+    if (r.backup) console.log(`  备份：${r.backup}`);
+    for (const c of r.restarted ?? []) console.log(`  restart ${c.container}: ${c.ok ? "✓" : "✗"}`);
+    for (const h of r.health ?? []) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
   });
 
 program

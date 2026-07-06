@@ -19,7 +19,12 @@ async function gatherDiag(server: import("./types.js").ServerConfig, containers:
   return out;
 }
 
-export async function deploy(config: Config, projectName: string): Promise<DeployResult> {
+export interface DeployOptions {
+  /** 只打印执行计划（含 pre/postDeploy 钩子），不在服务器上跑任何命令、不记历史。 */
+  dryRun?: boolean;
+}
+
+export async function deploy(config: Config, projectName: string, opts: DeployOptions = {}): Promise<DeployResult> {
   const { project, server, serverName } = getProject(config, projectName);
   const result: DeployResult = {
     project: projectName,
@@ -28,11 +33,35 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
     output: "",
     health: [],
   };
+  const dir = project.dir;
+  const wrap = (c: string) => (dir ? `cd ${JSON.stringify(dir)} && ${c}` : c);
+  const timeout = (project.deployTimeout ?? 600) * 1000;
+
+  // dry-run：把 preDeploy → deploy → postDeploy 的编排计划打出来，不动服务器。带迁移/建索引的部署先看清楚。
+  if (opts.dryRun) {
+    const lines: string[] = [];
+    for (const c of project.preDeploy ?? []) lines.push(`[preDeploy]  ${c}`);
+    lines.push(`[deploy]     ${project.deploy}`);
+    for (const c of project.postDeploy ?? []) lines.push(`[postDeploy] ${c}`);
+    result.output = "dry-run 执行计划（未在服务器上运行任何命令）：\n" + lines.join("\n");
+    result.success = true;
+    return result;
+  }
 
   try {
+    result.hooks = [];
+    // 0. preDeploy 钩子（deploy 命令前，逐条串行）：DB 迁移 / 备份 / 建索引。任一失败即中止，绝不 pull/部署。
+    for (const c of project.preDeploy ?? []) {
+      const r = await runOnServer(server, wrap(c), undefined, timeout);
+      result.hooks.push({ phase: "pre", cmd: c, code: r.code, output: truncate([r.stdout, r.stderr].filter(Boolean).join("\n").trim(), 2000) });
+      if (r.code !== 0) {
+        result.error = `preDeploy 钩子失败（退出码 ${r.code}）：${c}`;
+        return result;
+      }
+    }
+
     // 1. 跑部署命令（可插拔）。含构建的部署会久，超时默认 600s（可按项目 deployTimeout 调）。
-    const cmd = project.dir ? `cd ${JSON.stringify(project.dir)} && ${project.deploy}` : project.deploy;
-    const run = await runOnServer(server, cmd, undefined, (project.deployTimeout ?? 600) * 1000);
+    const run = await runOnServer(server, wrap(project.deploy), undefined, timeout);
     result.output = truncate([run.stdout, run.stderr].filter(Boolean).join("\n").trim());
 
     if (run.code !== 0) {
@@ -42,12 +71,23 @@ export async function deploy(config: Config, projectName: string): Promise<Deplo
     }
 
     // 2. 记录 git 版本（如果是 git 目录）
-    if (project.dir) {
-      const rev = await runOnServer(server, `git -C ${JSON.stringify(project.dir)} rev-parse --short HEAD 2>/dev/null || true`);
+    if (dir) {
+      const rev = await runOnServer(server, `git -C ${JSON.stringify(dir)} rev-parse --short HEAD 2>/dev/null || true`);
       result.gitRev = rev.stdout.trim() || undefined;
     }
 
-    // 3. 健康检查（带预热宽限：服务刚起来需要几秒，轮询到 2xx 或超时）。多端点并行。
+    // 3. postDeploy 钩子（部署命令成功后，逐条串行）：烟测 / 额外校验。失败即判部署失败并抓诊断。
+    for (const c of project.postDeploy ?? []) {
+      const r = await runOnServer(server, wrap(c), undefined, timeout);
+      result.hooks.push({ phase: "post", cmd: c, code: r.code, output: truncate([r.stdout, r.stderr].filter(Boolean).join("\n").trim(), 2000) });
+      if (r.code !== 0) {
+        result.error = `postDeploy 钩子失败（退出码 ${r.code}）：${c}`;
+        if (project.containers?.length) result.failLogs = await gatherDiag(server, project.containers);
+        return result;
+      }
+    }
+
+    // 4. 健康检查（带预热宽限：服务刚起来需要几秒，轮询到 2xx 或超时）。多端点并行。
     result.health = await Promise.all(
       (project.health ?? []).map(async (url) => {
         const code = await waitHealthy(server, url);

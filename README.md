@@ -75,6 +75,33 @@ vibe-launch status
 vibe-launch restart myapp     # 只重启容器 + 健康检查，不拉代码
 ```
 
+## 🛠 复杂运维：从"手搓 SSH"收进 vl
+
+常规「部署当前代码」`deploy` 就够；但**事故响应 / 带 DB 迁移 / 灰度上线**这类要细粒度控制、穿透执行、步骤间验证的活，也不用再手搓一堆 `ssh … docker exec …`：
+
+```bash
+# 穿透执行：在项目所在服务器上跑即席命令（自动带 host/key）
+vibe-launch run myapp "git -C /path/to/app log -3"
+vibe-launch run myapp --container myapp-api "python manage.py migrate"   # 自动 docker exec 进容器
+vibe-launch run myapp --container myapp-pg "psql -U app -c 'select count(*) from users'"
+
+# 选择性重启：poller 改动只重 worker，不打断 api 用户
+vibe-launch restart myapp --only myapp-worker
+
+# 部署前后钩子（写在项目配置里）：先迁移 → pull → 重启 → 烟测，一条 deploy 全编排
+vibe-launch deploy myapp --dry-run            # 先看编排计划，不执行
+
+# 灰度收尾：部署后持续盯，异常就秒回滚
+vibe-launch deploy myapp --watch --duration 30m
+vibe-launch env myapp set FEATURE_X=on --restart    # 改远端 .env（自动备份）+ 重启
+vibe-launch rollback myapp                     # 回退上一个提交 + 重启（默认二次确认）
+
+# 前端一体：本地 build → 传产物 → 原子替换 → 重启 web（走项目 frontend 配置）
+vibe-launch deploy myapp --frontend
+```
+
+> `preDeploy` / `postDeploy` / `frontend` / `envFile` 都是项目配置里的可选段，见 [`vibe-launch.example.yaml`](vibe-launch.example.yaml)。危险操作（`rollback` / `env set`）带 `--dry-run` 预览和二次确认（脚本里加 `-y` 跳过）。
+
 ## 🖥️ 可视化操作台
 
 ```bash

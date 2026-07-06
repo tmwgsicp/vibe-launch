@@ -14,7 +14,11 @@ export interface RestartResult {
   error?: string;
 }
 
-export async function restart(config: Config, projectName: string): Promise<RestartResult> {
+export async function restart(
+  config: Config,
+  projectName: string,
+  opts: { only?: string[] } = {}
+): Promise<RestartResult> {
   const { project, server, serverName } = getProject(config, projectName);
   const result: RestartResult = {
     project: projectName,
@@ -24,10 +28,21 @@ export async function restart(config: Config, projectName: string): Promise<Rest
     health: [],
   };
 
-  const containers = project.containers ?? [];
-  if (!containers.length) {
+  const all = project.containers ?? [];
+  if (!all.length) {
     result.error = "项目未配置容器（containers），无可重启对象";
     return result;
+  }
+
+  // 选择性重启：只重指定容器（poller 改动只重 worker、不打断 api 用户）。校验都在项目里，避免手滑重错。
+  let containers = all;
+  if (opts.only?.length) {
+    const unknown = opts.only.filter((c) => !all.includes(c));
+    if (unknown.length) {
+      result.error = `--only 指定的容器不在项目配置里：${unknown.join(", ")}（可选：${all.join(", ")}）`;
+      return result;
+    }
+    containers = opts.only;
   }
 
   try {

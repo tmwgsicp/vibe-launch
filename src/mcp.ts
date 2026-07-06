@@ -15,6 +15,7 @@ import { getServerStats } from "./core/serverstats.js";
 import { listContainers, getContainerLogs } from "./core/containers.js";
 import { enableSshPool, runOnServer } from "./core/ssh.js";
 import { suggestDeploy } from "./core/scaffold.js";
+import { dockerExecCmd } from "./core/run.js";
 import { VERSION } from "./version.js";
 
 function text(obj: unknown) {
@@ -215,19 +216,22 @@ export async function startMcp() {
     "run_command",
     "在指定服务器上执行任意 shell 命令，返回 stdout/stderr/退出码。这是灵活部署的万能原语：" +
       "探测环境(docker ps/inspect、ls、检查端口)、构建、起/改容器、看配置、排障等结构化工具没覆盖的，都用它。" +
-      "有副作用、权限大，请明确目的后再用；只读探测随意，破坏性操作(删除/重启线上)要谨慎。",
+      "带 container 则自动 docker exec 进容器跑（DB 迁移 / psql / redis-cli）。" +
+      "有副作用、权限大，请明确目的后再用；只读探测随意，破坏性操作(删除/重启线上/迁移)要谨慎。",
     {
       server: z.string().describe("服务器别名，见 list_projects"),
-      command: z.string().describe("要在服务器上执行的 shell 命令"),
-      cwd: z.string().optional().describe("工作目录（可选）"),
+      command: z.string().describe("要执行的 shell 命令（带 container 时是容器内执行的命令）"),
+      container: z.string().optional().describe("容器名：填了就 docker exec 进该容器跑 command"),
+      cwd: z.string().optional().describe("工作目录（容器模式下为容器内 -w 目录）"),
       timeout: z.number().optional().describe("超时秒数，默认 120；构建类可调大，最多 600"),
     },
-    async ({ server, command, cwd, timeout }) => {
+    async ({ server, command, container, cwd, timeout }) => {
       const c = loadConfig();
       if (!c.servers[server]) return { ...text({ error: `服务器 ${server} 不存在` }), isError: true };
       const tmo = Math.min(600, Math.max(1, timeout ?? 120)) * 1000;
       try {
-        const r = await runOnServer(c.servers[server], command, cwd, tmo);
+        const effective = container ? dockerExecCmd(container, command, cwd) : command;
+        const r = await runOnServer(c.servers[server], effective, container ? undefined : cwd, tmo);
         return { ...text({ code: r.code, stdout: r.stdout, stderr: r.stderr }), isError: r.code !== 0 };
       } catch (e) {
         return { ...text({ error: (e as Error).message }), isError: true };
