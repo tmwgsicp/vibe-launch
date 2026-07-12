@@ -60,10 +60,13 @@ export async function deployFrontend(config: Config, projectName: string): Promi
       const ok = await ssh.putDirectory(distPath, staging, {
         recursive: true,
         concurrency: 8,
-        // 别把本地依赖/缓存误传上去
+        // 只排 .git；**不能排 node_modules** —— Nuxt/Nitro SSR 产物的 .output/server/
+        // node_modules 装着运行时依赖(vue-bundle-renderer 等)，过滤掉 web 会
+        // ERR_MODULE_NOT_FOUND 起不来。传的是 build 产物(dist)不是项目根，产物内的
+        // node_modules 都是必需的，全传。
         validate: (p) => {
           const segs = p.split(/[\\/]/);
-          return !segs.includes("node_modules") && !segs.includes(".git");
+          return !segs.includes(".git");
         },
       });
       if (!ok) throw new Error("上传过程中部分文件失败");
