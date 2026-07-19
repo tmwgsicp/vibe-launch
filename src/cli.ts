@@ -464,10 +464,14 @@ program
     console.log(`==> 体检 ${server} …`);
     const r = await doctor(cfg(), server);
     if (r.error) { console.error(`❌ ${r.error}`); process.exitCode = 1; return; }
-    console.log(`  Docker：${r.docker}`);
+    console.log(`  Docker：${r.docker}${r.curl ? "" : "   ⚠ 服务器没装 curl，探测受限"}`);
+    console.log(`  DNS：${r.dns.join(", ") || "(未配! 多半就是全 000 的原因)"}`);
     console.log(`  现有镜像：${r.currentMirrors.join(", ") || "(未配)"}`);
-    for (const p of r.probes) console.log(`  ${p.ok ? "✓" : "✗"} ${p.name.padEnd(11)} ${p.code}  ${String(p.timeMs).padStart(5)}ms  ${p.url}`);
-    if (r.probes.find((p) => p.name === "Docker Hub" && !p.ok))
+    for (const p of r.probes)
+      console.log(`  ${p.ok ? "✓" : "✗"} ${p.name.padEnd(11)} ${String(p.code).padStart(3)}  ${String(p.timeMs).padStart(5)}ms  ${p.url}${p.reason ? "   ← " + p.reason : ""}`);
+    if (r.dns.length === 0 && r.probes.every((p) => !p.ok))
+      console.log(`  → 全部不通且没有 DNS：先修这台机的 DNS（/etc/resolv.conf 加 nameserver），再谈镜像`);
+    else if (r.probes.find((p) => p.name === "Docker Hub" && !p.ok))
       console.log(`  → Docker Hub 不可达，建议：vl docker-mirror ${server}（云机优先用云内网镜像）`);
   });
 

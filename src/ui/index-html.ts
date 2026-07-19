@@ -526,8 +526,9 @@ async function doProxySetup(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<pr
 async function doDoctor(k){const out=$('netout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 体检中…</pre>';
   try{const r=await api('/api/doctor?server='+encodeURIComponent(k),undefined,30000);
     if(r.error){if(out)out.innerHTML='<pre class="out">'+esc(r.error)+'</pre>';return;}
-    let t='Docker：'+esc(r.docker)+'\n现有镜像：'+((r.currentMirrors||[]).join(', ')||'(未配)')+'\n';
-    t+=(r.probes||[]).map(p=>(p.ok?'✓':'✗')+' '+p.name+'  '+p.code+'  '+p.timeMs+'ms').join('\n');
+    let t='Docker：'+esc(r.docker)+(r.curl?'':'   ⚠ 没装 curl，探测受限')+'\nDNS：'+((r.dns||[]).join(', ')||'(未配! 多半就是全 000 的原因)')+'\n现有镜像：'+((r.currentMirrors||[]).join(', ')||'(未配)')+'\n';
+    t+=(r.probes||[]).map(p=>(p.ok?'✓':'✗')+' '+p.name+'  '+p.code+'  '+p.timeMs+'ms'+(p.reason?'   ← '+p.reason:'')).join('\n');
+    if((r.dns||[]).length===0&&(r.probes||[]).every(p=>!p.ok))t+='\n\n→ 全部不通且没 DNS：先修这台机的 DNS（/etc/resolv.conf），再谈镜像';
     if(out)out.innerHTML='<pre class="out">'+esc(t)+'</pre>';}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function doDockerMirror(k){const cu=(($('dmir-'+k)||{}).value||'').trim();const mirrors=cu?cu.split(/\s+/):[];
   if(!confirm('给 '+k+' 配 Docker 镜像加速？\n会改 /etc/docker/daemon.json 并重启 docker —— 该机所有容器会短暂重启一次。'))return;
