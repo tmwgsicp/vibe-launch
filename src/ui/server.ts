@@ -427,7 +427,8 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 反代（Caddy）：装/接线 / 应用站点 / 下线 / 列站点
       if (path.startsWith("/api/proxy/setup/") && req.method === "POST") {
         const server = decodeURIComponent(path.slice("/api/proxy/setup/".length));
-        return json(res, 200, await setupProxy(loadConfig(), server));
+        const b = await readBody(req);
+        return json(res, 200, await setupProxy(loadConfig(), server, { caddyUrl: b.caddyUrl || undefined }));
       }
       if (path.startsWith("/api/proxy/apply/") && req.method === "POST") {
         const name = decodeURIComponent(path.slice("/api/proxy/apply/".length));

@@ -417,9 +417,10 @@ const proxyCmd = program.command("proxy").description("反代（Caddy）：装 +
 proxyCmd
   .command("setup <server>")
   .description("在服务器装 Caddy + 接线（Caddyfile import）+ 起服务；检测 80/443 冲突")
-  .action(async (server: string) => {
+  .option("--caddy-url <url>", "自定义 Caddy 下载地址（国内可指镜像绕开被墙；也可用环境变量 VL_CADDY_URL）")
+  .action(async (server: string, opts) => {
     console.log(`==> proxy setup ${server} …`);
-    const r = await setupProxy(cfg(), server);
+    const r = await setupProxy(cfg(), server, { caddyUrl: opts.caddyUrl });
     for (const s of r.steps) console.log(`  ${s}`);
     if (r.success) console.log(`✅ ${server} 已就绪，可 vl proxy apply <项目>`);
     else { console.error(`❌ ${r.error}`); process.exitCode = 1; }

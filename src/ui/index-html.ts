@@ -188,8 +188,11 @@ export const INDEX_HTML = String.raw`<!doctype html>
   </select></label>
   <label id="s_pw_l">初次登录密码（一次性装公钥用，已有 key 可留空）<input id="s_pw" type="password" placeholder="可留空"></label>
   <div id="s_manual" style="display:none">
-    <div class="dsub">把下面这段【整段复制】，贴进服务器控制台（云厂商网页终端 / VNC / 扫码登录进去的那个 shell）执行装上公钥，然后点“验证并接入”。</div>
-    <div class="code"><button type="button" class="sm cp" onclick="copyManual()">复制</button><span id="s_snip">生成中…</span></div>
+    <div class="dsub">把下面这段整段复制，贴进服务器控制台（云厂商网页终端 / VNC / 扫码登录进去的那个 shell）执行装上公钥，然后点“验证并接入”。</div>
+    <div style="display:flex;gap:8px;align-items:flex-start;margin-top:6px">
+      <pre class="out" id="s_snip" style="flex:1;margin:0;white-space:pre-wrap;word-break:break-all;max-height:40vh">生成中…</pre>
+      <button type="button" class="sm" style="flex:none" onclick="copyManual()">复制</button>
+    </div>
   </div>
   <label>备注<input id="s_note" placeholder="海外 / 国内"></label>
 </div><div class="df"><button onclick="serverDlg.close()">取消</button><button class="primary" id="s_go" onclick="submitServer()">接入</button></div></dialog>
@@ -399,7 +402,9 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
   d+='<div class="grp"><div class="glabel">反代（Caddy）</div><div class="acts">'
     +'<button class="sm" onclick="event.stopPropagation();doProxySetup(\''+esc(k)+'\')">安装 / 接线 Caddy</button>'
     +'<button class="sm" onclick="event.stopPropagation();loadProxySites(\''+esc(k)+'\')">查看站点</button></div>'
-    +'<div class="mt" style="margin-top:6px;color:var(--faint)">裸机 Caddy 独占 80/443；被 1Panel/nginx 占会告警。装好后到项目里「应用反代」</div>'
+    +'<div class="acts" style="margin-top:8px"><span class="mt" style="color:var(--faint)">国内镜像</span>'
+    +'<input id="pxurl-'+esc(k)+'" placeholder="Caddy 下载地址（国内可选，绕开被墙）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()"></div>'
+    +'<div class="mt" style="margin-top:6px;color:var(--faint)">裸机 Caddy 独占 80/443；被 1Panel/nginx 占会告警。装好后到项目里「应用反代」。国内下载慢/失败时填镜像地址，或手动装好 Caddy 再点（会自动跳过安装）</div>'
     +'<div id="pxsrv-'+esc(k)+'" style="margin-top:8px"></div></div>';
   // 容器管理（列全部 + 删停止 + 一键清理）
   d+='<div class="grp"><div class="glabel">容器管理　<a class="link" onclick="event.stopPropagation();loadCts(\''+esc(k)+'\')">刷新</a></div>'
@@ -494,7 +499,8 @@ async function doProxyRm(k){if(!confirm('下线 '+k+' 的反代？会删除站�
   try{const r=await api('/api/proxy/rm/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
     if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(k+(r.success?' 反代已下线':' 下线有问题'),r.success?'':'err');}catch(e){toast(e.message,'err');}}
 async function doProxySetup(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 安装 / 接线 Caddy（可能要拉包，请稍等）…</pre>';
-  try{const r=await api('/api/proxy/setup/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+  const cu=(($('pxurl-'+k)||{}).value||'').trim();
+  try{const r=await api('/api/proxy/setup/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cu?{caddyUrl:cu}:{})},0);
     if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(r.success?'Caddy 已就绪':('setup 有问题：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function loadProxySites(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<span class="mt">加载中…</span>';
   try{const a=await api('/api/proxy/ls?server='+encodeURIComponent(k));
