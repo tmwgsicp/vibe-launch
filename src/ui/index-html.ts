@@ -225,6 +225,8 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>登录用户<input id="se_user"></label>
   <label>SSH 端口<input id="se_port"></label>
   <label>备注<input id="se_note" placeholder="海外 / 国内 / 用途"></label>
+  <label>Docker 镜像（国内加速，空格分隔，可空）<input id="se_docker_mirror" placeholder="https://xxx.mirror.aliyuncs.com"></label>
+  <label>Caddy 下载地址（国内镜像，可空）<input id="se_caddy_url" placeholder="https://镜像/caddy_linux_amd64"></label>
 </div><div class="df"><button onclick="srvEditDlg.close()">取消</button><button class="primary" id="se_go" onclick="submitSrvEdit()">保存</button></div></dialog>
 
 <dialog id="browseDlg"><div class="dh">选择目录</div><div class="dsub" id="br_cwd"></div><div class="db">
@@ -414,14 +416,14 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
     +'<button class="sm" onclick="event.stopPropagation();doProxySetup(\''+esc(k)+'\')">安装 / 接线 Caddy</button>'
     +'<button class="sm" onclick="event.stopPropagation();loadProxySites(\''+esc(k)+'\')">查看站点</button></div>'
     +'<div class="acts" style="margin-top:8px"><span class="mt" style="color:var(--faint)">国内镜像</span>'
-    +'<input id="pxurl-'+esc(k)+'" placeholder="Caddy 下载地址（国内可选，绕开被墙）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()"></div>'
+    +'<input id="pxurl-'+esc(k)+'" value="'+esc((CONFIG.servers[k].mirrors&&CONFIG.servers[k].mirrors.caddyUrl)||'')+'" placeholder="Caddy 下载地址（国内可选，绕开被墙）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()"></div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">裸机 Caddy 独占 80/443；被 1Panel/nginx 占会告警。装好后到项目里「应用反代」。国内下载慢/失败时填镜像地址，或手动装好 Caddy 再点（会自动跳过安装）</div>'
     +'<div id="pxsrv-'+esc(k)+'" style="margin-top:8px"></div></div>';
   // 网络体检 / 镜像加速（国内）
   d+='<div class="grp"><div class="glabel">网络体检 / 镜像加速（国内）</div><div class="acts">'
     +'<button class="sm" onclick="event.stopPropagation();doDoctor(\''+esc(k)+'\')">连通性体检</button></div>'
     +'<div class="acts" style="margin-top:8px"><span class="mt" style="color:var(--faint)">Docker 镜像</span>'
-    +'<input id="dmir-'+esc(k)+'" placeholder="镜像地址（空=默认公共源；多个空格分隔）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()">'
+    +'<input id="dmir-'+esc(k)+'" value="'+esc(((CONFIG.servers[k].mirrors&&CONFIG.servers[k].mirrors.docker)||[]).join(" "))+'" placeholder="镜像地址（空=服务器预设/默认；多个空格分隔）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()">'
     +'<button class="sm" onclick="event.stopPropagation();doDockerMirror(\''+esc(k)+'\')">配镜像加速</button></div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">体检只读；配镜像会改 daemon.json 并重启 docker（所有容器短暂重启）。公共源常失效，云机优先用云内网镜像，配完再体检复验</div>'
     +'<div id="netout-'+esc(k)+'" style="margin-top:8px"></div></div>';
@@ -714,11 +716,13 @@ async function submitProject(){$('p_go').disabled=true;
   }catch(e){toast(e.message,'err');}finally{$('p_go').disabled=false;}}
 async function delProject(k){if(!confirm('从清单删除项目 '+k+'？(只移除记录，不动服务器)'))return;
   try{await api('/api/project/'+encodeURIComponent(k),{method:'DELETE'});toast('已删除');EXP.delete('p:'+k);await refreshAll();}catch(e){toast(e.message,'err');}}
-function openSrvEdit(k){EDITSRV=k;const v=CONFIG.servers[k];$('se_alias').value=k;$('se_host').value=v.host||'';$('se_user').value=v.user||'';$('se_port').value=v.port||22;$('se_note').value=v.note||'';srvEditDlg.showModal();}
+function openSrvEdit(k){EDITSRV=k;const v=CONFIG.servers[k];$('se_alias').value=k;$('se_host').value=v.host||'';$('se_user').value=v.user||'';$('se_port').value=v.port||22;$('se_note').value=v.note||'';$('se_docker_mirror').value=((v.mirrors&&v.mirrors.docker)||[]).join(' ');$('se_caddy_url').value=(v.mirrors&&v.mirrors.caddyUrl)||'';srvEditDlg.showModal();}
 async function submitSrvEdit(){$('se_go').disabled=true;
   try{const newName=$('se_alias').value.trim(),host=$('se_host').value.trim(),user=$('se_user').value.trim();
     if(!newName||!host||!user){toast('别名/Host/用户必填','err');return;}
-    await api('/api/server/'+encodeURIComponent(EDITSRV),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({newName,host,user,port:Number($('se_port').value)||22,note:$('se_note').value.trim()})});
+    const dm=$('se_docker_mirror').value.trim(),cu=$('se_caddy_url').value.trim();
+    const mirrors=(dm||cu)?{docker:dm?dm.split(/\s+/):undefined,caddyUrl:cu||undefined}:null;
+    await api('/api/server/'+encodeURIComponent(EDITSRV),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({newName,host,user,port:Number($('se_port').value)||22,note:$('se_note').value.trim(),mirrors})});
     toast('已保存');srvEditDlg.close();if(newName!==EDITSRV)EXP.delete('s:'+EDITSRV);await refreshAll();
   }catch(e){toast(e.message,'err');}finally{$('se_go').disabled=false;}}
 async function delServer(k){if(!confirm('从清单删除服务器 '+k+'？(只移除记录，不动服务器本身)'))return;

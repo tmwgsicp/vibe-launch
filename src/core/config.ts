@@ -94,6 +94,15 @@ export function updateServer(
   for (const k of ["note", "identityFile", "password"] as const) {
     if (merged[k] === "" || merged[k] == null) delete (merged as Record<string, unknown>)[k];
   }
+  // mirrors：null（UI 清空）或整段空则删掉；否则清理空 docker 数组 / 空 caddyUrl
+  if (merged.mirrors == null) {
+    delete (merged as Record<string, unknown>).mirrors;
+  } else {
+    const m = merged.mirrors;
+    if (!m.docker || !m.docker.length) delete m.docker;
+    if (!m.caddyUrl) delete m.caddyUrl;
+    if (!m.docker && !m.caddyUrl) delete (merged as Record<string, unknown>).mirrors;
+  }
   const target = (newName || name).trim();
   if (target !== name) {
     if (config.servers[target]) throw new Error(`别名 "${target}" 已被占用`);

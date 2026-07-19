@@ -10,6 +10,9 @@ export interface ServerConfig {
   password?: string;
   /** 备注，如 海外/国内、用途 */
   note?: string;
+  /** 国内网络优化：为这台机预设镜像源，配一次即持久化。
+   *  docker → docker-mirror 默认取用；caddyUrl → proxy setup 默认取用（省得每次命令行传）。 */
+  mirrors?: { docker?: string[]; caddyUrl?: string };
 }
 
 export interface ProjectConfig {

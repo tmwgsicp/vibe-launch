@@ -103,7 +103,10 @@ export async function setDockerMirror(
   opts: { dryRun?: boolean } = {}
 ): Promise<DockerMirrorResult> {
   const server = getServerOf(config, target);
-  const list = (mirrors.length ? mirrors : DEFAULT_DOCKER_MIRRORS).map((m) => m.trim()).filter(Boolean);
+  // 优先级：命令行显式 > 服务器预设(server.mirrors.docker) > 默认公共源
+  const configured = server.mirrors?.docker ?? [];
+  const chosen = mirrors.length ? mirrors : configured.length ? configured : DEFAULT_DOCKER_MIRRORS;
+  const list = chosen.map((m) => m.trim()).filter(Boolean);
   const res: DockerMirrorResult = { server: target, file: "/etc/docker/daemon.json", mirrors: list, restarted: false, success: false };
   try {
     for (const m of list) if (!validMirror(m)) throw new Error(`非法镜像地址：${m}`);

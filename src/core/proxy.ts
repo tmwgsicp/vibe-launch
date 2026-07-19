@@ -52,7 +52,8 @@ export async function setupProxy(config: Config, target: string, opts: { caddyUr
   const server = getServerOf(config, target);
   const res: ProxyStepResult = { server: target, success: false, steps: [] };
   try {
-    const caddyUrl = opts.caddyUrl || process.env.VL_CADDY_URL || undefined;
+    // 优先级：命令行显式 > 服务器预设(server.mirrors.caddyUrl) > 环境变量 > 默认官方源
+    const caddyUrl = opts.caddyUrl || server.mirrors?.caddyUrl || process.env.VL_CADDY_URL || undefined;
     // 自定义 URL 会拼进服务器 shell，做基础校验挡注入（只允许 http(s) + 无 shell 元字符）
     if (caddyUrl && (!/^https?:\/\//.test(caddyUrl) || /[\s"'`]|\$\(/.test(caddyUrl)))
       throw new Error(`非法的 --caddy-url：${caddyUrl}（需 http(s):// 且不含空格/引号/反引号/$()）`);

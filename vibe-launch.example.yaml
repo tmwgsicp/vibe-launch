@@ -11,6 +11,11 @@ servers:
     # vibe-launch 自管的专用 key（server add 时自动生成并装到服务器）
     identityFile: ~/.vibe-launch/id_ed25519
     note: 海外 / 国内 / 用途随你写
+    # 国内网络优化（可选）：为这台机预设镜像源，配一次持久化，docker-mirror / proxy setup 默认取用。
+    # 优先级：命令行显式 > 这里的预设 > 环境变量 > 默认。UI「编辑服务器」里也能填。
+    # mirrors:
+    #   docker: [https://你的专属.mirror.aliyuncs.com]   # docker-mirror 默认写这些（云机优先云内网镜像）
+    #   caddyUrl: https://你的镜像/caddy_linux_amd64      # proxy setup 装 Caddy 默认从这里下
 
 projects:
   myapp:

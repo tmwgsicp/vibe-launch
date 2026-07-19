@@ -397,7 +397,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         const b = await readBody(req);
         const c = loadConfig();
         updateServer(c, name, {
-          host: b.host, user: b.user, port: b.port, note: b.note, identityFile: b.identityFile,
+          host: b.host, user: b.user, port: b.port, note: b.note, identityFile: b.identityFile, mirrors: b.mirrors,
         }, b.newName);
         const p = saveConfig(c);
         return json(res, 200, { ok: true, path: p });
