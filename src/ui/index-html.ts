@@ -311,15 +311,17 @@ async function loadTun(){try{TUN=await api('/api/tunnels');}catch(e){TUN=[];}}
 async function loadMcp(){try{MCP=await api('/api/mcp-info');}catch(e){}}
 async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textContent='刷新中…';}
   if(VIEW==='log')OPLOG=null;
-  try{await loadConfig();render();loadStats();loadLint();await Promise.all([loadStatus(),loadTun()]);
+  try{await loadConfig();render();loadStats();loadAdvise();await Promise.all([loadStatus(),loadTun()]);
     // 手动刷新时连带刷新当前展开的容器/历史（仍保留旧值，不闪）
     for(const id of EXP){if(id.slice(0,2)==='s:')loadCts(id.slice(2));else if(id.slice(0,2)==='p:')loadHist(id.slice(2));}
     render();}
   finally{if(b){b.disabled=false;b.textContent='刷新';}}}
 function render(){({overview:rOverview,servers:rServers,projects:rProjects,monitor:rMonitor,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
-let OPLOG=null,LINT=[],METRICS=null;
+let OPLOG=null,ADV=[],METRICS=null;
 async function loadOplog(){try{OPLOG=await api('/api/oplog?limit=150');}catch(e){OPLOG=[];}if(VIEW==='log')render();}
-async function loadLint(){try{LINT=await api('/api/lint');}catch(e){LINT=[];}if(VIEW==='overview')render();}
+async function loadAdvise(){try{ADV=await api('/api/advise');}catch(e){ADV=[];}if(VIEW==='overview')render();}
+function jumpProj(k){EXP.add('p:'+k);go('projects');}
+function jumpSrv(k){EXP.add('s:'+k);go('servers');loadCts(k);}
 async function loadMetrics(){try{METRICS=await api('/api/metrics?limit=900');}catch(e){METRICS=[];}if(VIEW==='monitor')render();}
 function rMonitor(){
   if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
@@ -387,7 +389,16 @@ function rOverview(){
     (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' '+c.name+' '+c.state);});
     (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 健康 '+h.httpCode);});});
   let h=iss.length?'<div class="banner warn"><b>'+iss.length+' 项需注意</b> · '+iss.map(esc).join(' · ')+'</div>':'<div class="banner"><b>一切正常</b></div>';
-  if(LINT&&LINT.length)h+='<div class="banner warn"><b>配置检查 '+LINT.length+' 项</b> · '+LINT.map(x=>(x.level==='error'?'✗ ':'⚠ ')+esc(x.target)+'：'+esc(x.message)).join('　·　')+'</div>';
+  // 建议：问题 + 怎么办 + 可点的工具（advise 已含配置 lint）
+  if(ADV&&ADV.length){h+='<h2 class="sec">待处理 · '+ADV.length+' 项</h2><div class="list">';
+    h+=ADV.map(a=>{const act=a.action;let btn='';
+      if(act&&act.kind==='logs')btn='<button class="sm" onclick="showLogs(\''+esc(act.server)+'\',\''+esc(act.container)+'\')">'+esc(act.label)+'</button>';
+      else if(act&&act.kind==='deploy')btn='<button class="sm" onclick="jumpProj(\''+esc(act.project)+'\')">去部署</button>';
+      else if(act&&act.kind==='doctor')btn='<button class="sm" onclick="jumpSrv(\''+esc(act.server)+'\')">'+esc(act.label)+'</button>';
+      const cmd=act&&act.cmd?'　<code>'+esc(act.cmd)+'</code>':'';
+      return '<div class="row" style="cursor:default;align-items:flex-start;flex-wrap:wrap;gap:6px 10px"><span class="dot '+(a.level==='error'?'bad':'')+'" style="margin-top:6px'+(a.level!=='error'?';background:var(--warn)':'')+'"></span>'
+        +'<div style="flex:1;min-width:220px"><div><b>'+esc(a.target)+'</b> · '+esc(a.problem)+'</div><div class="mt" style="font-size:12.5px">→ '+esc(a.fix)+cmd+'</div></div>'+btn+'</div>';
+    }).join('');h+='</div>';}
   h+='<h2 class="sec">服务器</h2><div class="list">';
   h+=Object.keys(srv).map(n=>{const s=STATS[n];let m='';
     if(s&&s.loading)m='<span class="mt"><span class="spin"></span></span>';
@@ -892,6 +903,6 @@ try{var _as=+localStorage.getItem('vl-autoref-sec');if(_as)AUTOREF_SEC=_as;}catc
 applyTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(THEME==='system')applyTheme();});
 logDlg.addEventListener('close',()=>{if(LOG.es){LOG.es.close();LOG.es=null;}});
-(async()=>{await loadConfig();loadMcp().then(()=>{if(VIEW==='mcp')render();});go('overview');loadStats();loadLint();await Promise.all([loadStatus(),loadTun()]);render();applyAutoref();})();
+(async()=>{await loadConfig();loadMcp().then(()=>{if(VIEW==='mcp')render();});go('overview');loadStats();loadAdvise();await Promise.all([loadStatus(),loadTun()]);render();applyAutoref();})();
 </script>
 </body></html>`;

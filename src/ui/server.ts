@@ -23,6 +23,7 @@ import { checkExposure } from "../core/portcheck.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js";
 import { doctor, setDockerMirror } from "../core/doctor.js";
 import { lintConfig } from "../core/lint.js";
+import { advise } from "../core/advise.js";
 import { startCollector } from "../core/monitor.js";
 import { readSamples } from "../core/metrics.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
@@ -206,6 +207,10 @@ export async function startUi(
       // 清单 lint（配置常见错误，本地）
       if (path === "/api/lint" && req.method === "GET") {
         return json(res, 200, lintConfig(loadConfig()));
+      }
+      // 建议：监测/配置发现的问题 + 怎么办（从已采 metrics 分析，零额外 SSH）
+      if (path === "/api/advise" && req.method === "GET") {
+        return json(res, 200, advise(loadConfig()));
       }
       // 操作日志（全量审计流：deploy/restart/rollback/env/run/proxy/接入/删容器…）
       if (path === "/api/oplog" && req.method === "GET") {

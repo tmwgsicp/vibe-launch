@@ -12,6 +12,7 @@ import { getHistory } from "./core/history.js";
 import { readOps } from "./core/oplog.js";
 import { doctor } from "./core/doctor.js";
 import { lintConfig } from "./core/lint.js";
+import { advise } from "./core/advise.js";
 import { preDeploy } from "./core/predeploy.js";
 import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
@@ -210,6 +211,13 @@ export async function startMcp() {
       try { return text(await doctor(loadConfig(), server)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
     }
+  );
+
+  server.tool(
+    "get_advisories",
+    "看当前建议（只读）：从监测/配置发现的问题 + 对应怎么办 —— 磁盘满/Swap 高/健康检查失败/容器崩溃循环/配置错等，每条带解法和可执行动作(看日志/部署/体检/排查命令)。巡检、排障时用它一眼看全'有什么问题 + 该怎么办'。",
+    {},
+    async () => text(advise(loadConfig()))
   );
 
   server.tool(

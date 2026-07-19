@@ -20,6 +20,7 @@ import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js"
 import { readOps } from "./core/oplog.js";
 import { doctor, setDockerMirror } from "./core/doctor.js";
 import { lintConfig } from "./core/lint.js";
+import { advise } from "./core/advise.js";
 import { startCollector } from "./core/monitor.js";
 import { VERSION } from "./version.js";
 
@@ -545,6 +546,15 @@ program
     if (!issues.length) { console.log("✅ 配置没发现问题"); return; }
     for (const i of issues) console.log(`${i.level === "error" ? "✗" : "⚠"} ${i.target.padEnd(16)} ${i.message}`);
     if (issues.some((i) => i.level === "error")) process.exitCode = 1;
+  });
+
+program
+  .command("advise")
+  .description("看当前建议：监测/配置发现的问题 + 对应怎么办（磁盘满/Swap高/健康失败/崩溃循环/配置错等）")
+  .action(() => {
+    const a = advise(cfg());
+    if (!a.length) { console.log("✅ 暂无待处理建议"); return; }
+    for (const x of a) console.log(`${x.level === "error" ? "✗" : "⚠"} ${x.target}　${x.problem}\n    → ${x.fix}${x.action?.cmd ? "：" + x.action.cmd : ""}`);
   });
 
 program
