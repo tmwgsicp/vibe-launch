@@ -38,6 +38,19 @@ export async function status(config: Config, projectName: string): Promise<Statu
       result.containers.push({ name, state: r.stdout.trim() || "unknown" });
     }
 
+    // 非容器项目(systemd)：从 restartCmd 解析服务名，systemctl is-active 展示状态。
+    // 补齐"非容器一等公民" —— 以前 systemd 项目 status 的容器行是空的。
+    if (!project.containers?.length) {
+      // restartCmd 优先；没配则从 deploy 命令兜底解析（老 systemd 项目 deploy 结尾常是 systemctl restart …）
+      const src = project.restartCmd || project.deploy || "";
+      const m = src.match(/systemctl\s+(?:restart|reload|start)\s+([^&|;]+)/);
+      const svcs = m ? m[1].split(/\s+/).filter((s) => s && !s.startsWith("-") && /^[A-Za-z0-9._@-]+$/.test(s)) : [];
+      for (const s of svcs) {
+        const r = await runOnServer(server, `systemctl is-active ${q(s)} 2>/dev/null || echo unknown`);
+        result.containers.push({ name: s, state: r.stdout.trim() || "unknown" });
+      }
+    }
+
     // 健康检查
     for (const url of project.health ?? []) {
       const code = await curlOnServer(server, url);

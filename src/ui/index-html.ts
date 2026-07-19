@@ -332,6 +332,8 @@ function hostHtml(k,v){if(!HIDEIP)return esc(v.host);const sh=REV.has(k);
   return '<span class="ipmask" onclick="event.stopPropagation();revealIp(\''+esc(k)+'\')">'+(sh?esc(v.host):'••••••••')+'</span>';}
 function revealIp(k){REV.has(k)?REV.delete(k):REV.add(k);render();}
 function toggle(id){EXP.has(id)?EXP.delete(id):EXP.add(id);render();}
+// 运行单元是否"起着"：docker(running/up) 或 systemd(active，须精确 —— inactive 含 active 子串不能算)
+function isUp(st){return /running|up/i.test(st||'')||/^active$/i.test(st||'');}
 
 /* ---- 总览：紧凑概况 ---- */
 function rOverview(){
@@ -341,7 +343,7 @@ function rOverview(){
     if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存满');
     if(s.diskTotalMb&&s.diskUsedMb/s.diskTotalMb>=.9)iss.push(n+' 磁盘满');});
   Object.entries(STATUS).forEach(([k,s])=>{if(!s)return;if(!s.reachable){iss.push(k+' 连不上');return;}
-    (s.containers||[]).forEach(c=>{if(!/running|up/i.test(c.state))iss.push(k+' '+c.name+' '+c.state);});
+    (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' '+c.name+' '+c.state);});
     (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 健康 '+h.httpCode);});});
   let h=iss.length?'<div class="banner warn"><b>'+iss.length+' 项需注意</b> · '+iss.map(esc).join(' · ')+'</div>':'<div class="banner"><b>一切正常</b></div>';
   if(LINT&&LINT.length)h+='<div class="banner warn"><b>配置检查 '+LINT.length+' 项</b> · '+LINT.map(x=>(x.level==='error'?'✗ ':'⚠ ')+esc(x.target)+'：'+esc(x.message)).join('　·　')+'</div>';
@@ -449,7 +451,7 @@ function rProjects(){
   $('view-projects').innerHTML='<div class="list">'+ks.map(prjRow).join('')+'</div>';
 }
 function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
-  let info='';if(s&&s.reachable){const c=(s.containers||[]).map(x=>'<span class="dot '+(/running|up/i.test(x.state)?'ok':'bad')+'"></span>').join(' ');info='<span class="mini">'+c+'</span>';}
+  let info='';if(s&&s.reachable){const c=(s.containers||[]).map(x=>'<span class="dot '+(isUp(x.state)?'ok':'bad')+'"></span>').join(' ');info='<span class="mini">'+c+'</span>';}
   let row='<div class="row '+(op?'open':'')+'" onclick="toggle(\'p:'+esc(k)+'\')"><span class="nm">'+esc(k)+'</span>'
     +'<span class="mt">'+esc(p.server)+'</span>'+info+'<span class="sp"></span>'+stDot(s)+'<span class="caret">▸</span></div>';
   if(!op)return row;
@@ -481,7 +483,7 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
   if(s&&s.reachable&&s.health&&s.health.length)d+='<div class="grp"><div class="glabel">健康检查</div>'+s.health.map(h=>'<div class="hist"><span class="dot '+(h.ok?'ok':'bad')+'"></span>'+esc(h.url.replace(/^https?:\/\//,''))+' · '+h.httpCode+'</div>').join('')+'</div>';
   // 容器（日志/重启/停止/启动/详情）
   if(p.containers&&p.containers.length){d+='<div class="grp"><div class="glabel">容器</div>';
-    d+=p.containers.map(cn=>{const st=(s&&s.containers||[]).find(x=>x.name===cn);const run=st&&/running|up/i.test(st.state);
+    d+=p.containers.map(cn=>{const st=(s&&s.containers||[]).find(x=>x.name===cn);const run=st&&isUp(st.state);
       return '<div class="citem"><span class="dot '+(run?'ok':'bad')+'"></span><span class="cn">'+esc(cn)+'</span><span class="mt">'+(st?esc(st.state):'')+'</span><span class="sp"></span>'
         +'<button class="sm" onclick="event.stopPropagation();showLogs(\''+esc(p.server)+'\',\''+esc(cn)+'\')">日志</button>'
         +(run?'<button class="sm" onclick="event.stopPropagation();restartC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">重启</button><button class="sm" onclick="event.stopPropagation();stopC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">停止</button>':'<button class="sm" onclick="event.stopPropagation();startC(\''+esc(p.server)+'\',\''+esc(cn)+'\')">启动</button>')
