@@ -17,6 +17,7 @@ import { setEnv } from "./core/env.js";
 import { watch } from "./core/watch.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js";
 import { readOps } from "./core/oplog.js";
+import { doctor, setDockerMirror } from "./core/doctor.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -454,6 +455,46 @@ proxyCmd
       console.log(`# ${s.project}`);
       console.log(s.content.split("\n").map((l) => "  " + l).join("\n"));
     }
+  });
+
+program
+  .command("doctor <server>")
+  .description("网络体检：探 Docker Hub/GitHub/Caddy/npm/PyPI 可达性 + docker 镜像配置（国内排查）")
+  .action(async (server: string) => {
+    console.log(`==> 体检 ${server} …`);
+    const r = await doctor(cfg(), server);
+    if (r.error) { console.error(`❌ ${r.error}`); process.exitCode = 1; return; }
+    console.log(`  Docker：${r.docker}`);
+    console.log(`  现有镜像：${r.currentMirrors.join(", ") || "(未配)"}`);
+    for (const p of r.probes) console.log(`  ${p.ok ? "✓" : "✗"} ${p.name.padEnd(11)} ${p.code}  ${String(p.timeMs).padStart(5)}ms  ${p.url}`);
+    if (r.probes.find((p) => p.name === "Docker Hub" && !p.ok))
+      console.log(`  → Docker Hub 不可达，建议：vl docker-mirror ${server}（云机优先用云内网镜像）`);
+  });
+
+program
+  .command("docker-mirror <server>")
+  .description("配 Docker registry 镜像加速（改 daemon.json + 重启 docker，该机所有容器短暂重启）")
+  .option("--mirror <url...>", "镜像地址，可多个（不填用默认公共源；公共源常失效，配完请 vl doctor 复验）")
+  .option("--dry-run", "只显示将写入的 daemon.json，不改")
+  .option("-y, --yes", "跳过二次确认")
+  .action(async (server: string, opts) => {
+    const mirrors: string[] = opts.mirror || [];
+    if (opts.dryRun) {
+      const r = await setDockerMirror(cfg(), server, mirrors, { dryRun: true });
+      if (r.error) { console.error(`❌ ${r.error}`); process.exitCode = 1; return; }
+      console.log(`将写入 ${r.file}（registry-mirrors: ${r.mirrors.join(", ")}）：\n${r.content}`);
+      return;
+    }
+    if (!opts.yes) {
+      const ok = await confirm(`确认给 ${server} 配镜像加速？会改 daemon.json 并【重启 docker】（该机所有容器短暂重启一次）[y/N] `);
+      if (!ok) { console.log("已取消（非交互环境请加 -y）"); return; }
+    }
+    console.log(`==> 配 docker 镜像 ${server} …`);
+    const r = await setDockerMirror(cfg(), server, mirrors);
+    if (r.success) {
+      console.log(`✅ 已配镜像并重启 docker（${r.mirrors.join(", ")}）`);
+      console.log(`   建议 vl doctor ${server} 复验 Docker Hub 是否已提速（公共源常失效）`);
+    } else { console.error(`❌ ${r.error}`); process.exitCode = 1; }
   });
 
 program

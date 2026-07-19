@@ -21,6 +21,7 @@ import { deployFrontend } from "../core/frontend.js";
 import { VERSION } from "../version.js";
 import { checkExposure } from "../core/portcheck.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js";
+import { doctor, setDockerMirror } from "../core/doctor.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
 import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
 import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
@@ -166,6 +167,18 @@ export async function startUi(port = 7777, open = true): Promise<void> {
           timeoutMs: Math.min(600, Math.max(1, Number(b.timeout) || 120)) * 1000,
         });
         return json(res, 200, r);
+      }
+      // 网络体检（只读）
+      if (path === "/api/doctor" && req.method === "GET") {
+        const c = loadConfig(), sv = q.get("server");
+        if (!sv || !c.servers[sv]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await doctor(c, sv));
+      }
+      // 配 Docker 镜像加速（改 daemon.json + 重启 docker）
+      if (path.startsWith("/api/docker-mirror/") && req.method === "POST") {
+        const sv = decodeURIComponent(path.slice("/api/docker-mirror/".length));
+        const b = await readBody(req);
+        return json(res, 200, await setDockerMirror(loadConfig(), sv, Array.isArray(b.mirrors) ? b.mirrors : [], { dryRun: !!b.dryRun }));
       }
       // 部署历史
       if (path === "/api/history" && req.method === "GET") {

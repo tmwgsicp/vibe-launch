@@ -417,6 +417,14 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
     +'<input id="pxurl-'+esc(k)+'" placeholder="Caddy 下载地址（国内可选，绕开被墙）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()"></div>'
     +'<div class="mt" style="margin-top:6px;color:var(--faint)">裸机 Caddy 独占 80/443；被 1Panel/nginx 占会告警。装好后到项目里「应用反代」。国内下载慢/失败时填镜像地址，或手动装好 Caddy 再点（会自动跳过安装）</div>'
     +'<div id="pxsrv-'+esc(k)+'" style="margin-top:8px"></div></div>';
+  // 网络体检 / 镜像加速（国内）
+  d+='<div class="grp"><div class="glabel">网络体检 / 镜像加速（国内）</div><div class="acts">'
+    +'<button class="sm" onclick="event.stopPropagation();doDoctor(\''+esc(k)+'\')">连通性体检</button></div>'
+    +'<div class="acts" style="margin-top:8px"><span class="mt" style="color:var(--faint)">Docker 镜像</span>'
+    +'<input id="dmir-'+esc(k)+'" placeholder="镜像地址（空=默认公共源；多个空格分隔）" style="flex:1;min-width:180px;padding:6px 10px;font-size:13px" onclick="event.stopPropagation()">'
+    +'<button class="sm" onclick="event.stopPropagation();doDockerMirror(\''+esc(k)+'\')">配镜像加速</button></div>'
+    +'<div class="mt" style="margin-top:6px;color:var(--faint)">体检只读；配镜像会改 daemon.json 并重启 docker（所有容器短暂重启）。公共源常失效，云机优先用云内网镜像，配完再体检复验</div>'
+    +'<div id="netout-'+esc(k)+'" style="margin-top:8px"></div></div>';
   // 容器管理（列全部 + 删停止 + 一键清理）
   d+='<div class="grp"><div class="glabel">容器管理　<a class="link" onclick="event.stopPropagation();loadCts(\''+esc(k)+'\')">刷新</a></div>'
     +'<div class="acts"><button class="sm" onclick="event.stopPropagation();pruneCts(\''+esc(k)+'\')">清理停止容器</button></div>'
@@ -513,6 +521,18 @@ async function doProxySetup(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<pr
   const cu=(($('pxurl-'+k)||{}).value||'').trim();
   try{const r=await api('/api/proxy/setup/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cu?{caddyUrl:cu}:{})},0);
     if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(r.success?'Caddy 已就绪':('setup 有问题：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+async function doDoctor(k){const out=$('netout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 体检中…</pre>';
+  try{const r=await api('/api/doctor?server='+encodeURIComponent(k),undefined,30000);
+    if(r.error){if(out)out.innerHTML='<pre class="out">'+esc(r.error)+'</pre>';return;}
+    let t='Docker：'+esc(r.docker)+'\n现有镜像：'+((r.currentMirrors||[]).join(', ')||'(未配)')+'\n';
+    t+=(r.probes||[]).map(p=>(p.ok?'✓':'✗')+' '+p.name+'  '+p.code+'  '+p.timeMs+'ms').join('\n');
+    if(out)out.innerHTML='<pre class="out">'+esc(t)+'</pre>';}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+async function doDockerMirror(k){const cu=(($('dmir-'+k)||{}).value||'').trim();const mirrors=cu?cu.split(/\s+/):[];
+  if(!confirm('给 '+k+' 配 Docker 镜像加速？\n会改 /etc/docker/daemon.json 并重启 docker —— 该机所有容器会短暂重启一次。'))return;
+  const out=$('netout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 配镜像 + 重启 docker 中…</pre>';
+  try{const r=await api('/api/docker-mirror/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mirrors})},0);
+    if(out)out.innerHTML='<pre class="out">'+(r.success?'已配镜像并重启 docker：'+esc((r.mirrors||[]).join(', '))+'\n建议再点“连通性体检”复验 Docker Hub':('失败：'+esc(r.error||'?')))+'</pre>';
+    toast(k+(r.success?' 镜像已配':' 配镜像失败'),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function loadProxySites(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<span class="mt">加载中…</span>';
   try{const a=await api('/api/proxy/ls?server='+encodeURIComponent(k));
     if(out)out.innerHTML=a.length?a.map(s=>'<div class="code"><b>'+esc(s.project)+'</b>\n'+esc(s.content)+'</div>').join(''):'<span class="mt">（无 vibe-launch 管理的站点块）</span>';}catch(e){if(out)out.innerHTML='<span class="mt">'+esc(e.message)+'</span>';}}
