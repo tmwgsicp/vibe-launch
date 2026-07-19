@@ -73,10 +73,19 @@ export interface Config {
   projects: Record<string, ProjectConfig>;
 }
 
+export interface PreflightCheck {
+  name: string;
+  ok: boolean;
+  blocker: boolean; // true = 不通过就拦部署
+  detail: string;
+}
+
 export interface DeployResult {
   project: string;
   server: string;
   success: boolean;
+  /** 部署前置体检结果（有跑才有）：目录/docker/磁盘/git remote 等快速检查。 */
+  preflight?: PreflightCheck[];
   /** 部署命令的输出（截断） */
   output: string;
   gitRev?: string;

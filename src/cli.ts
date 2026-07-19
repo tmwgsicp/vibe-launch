@@ -105,6 +105,7 @@ program
   .option("--dry-run", "只打印执行计划（含钩子），不在服务器上跑任何命令")
   .option("--watch [cmd]", "部署成功后持续盯：带命令则跑该命令(退出码0=健康)，不带则轮询 health")
   .option("--duration <dur>", "--watch 的观察时长，如 30m / 90s / 1h，默认 10m", "10m")
+  .option("--no-preflight", "跳过部署前置体检（目录/docker/磁盘/git remote 快查）")
   .action(async (project: string, opts) => {
     // 前端一体：走独立通道（本地 build + 传产物），不跑服务器 deploy 命令
     if (opts.frontend) {
@@ -118,7 +119,8 @@ program
     }
 
     console.log(`==> 部署 ${project} …`);
-    const r = await deploy(cfg(), project, { dryRun: opts.dryRun });
+    const r = await deploy(cfg(), project, { dryRun: opts.dryRun, skipPreflight: opts.preflight === false });
+    for (const c of r.preflight ?? []) if (!c.ok) console.log(`  ${c.blocker ? "✗" : "⚠"} 体检 ${c.name}：${c.detail}`);
     if (r.output) console.log(r.output);
     if (opts.dryRun) return;
     for (const hk of r.hooks ?? []) console.log(`  [${hk.phase}Deploy] ${hk.cmd} → ${hk.code === 0 ? "✓" : "✗ 退出 " + hk.code}`);

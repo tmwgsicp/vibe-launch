@@ -588,8 +588,9 @@ async function doStatus(k){try{const a=await api('/api/status?project='+encodeUR
 async function doDeploy(k){const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 部署中…</pre>';
   try{const r=await api('/api/deploy/'+encodeURIComponent(k),{method:'POST'},0);
     if(out){const hk=(r.hooks&&r.hooks.length)?r.hooks.map(h=>'['+h.phase+'Deploy] '+esc(h.cmd)+' → '+(h.code===0?'✓':'✗ 退出 '+h.code)).join('\n')+'\n':'';
+      const pf=(r.preflight||[]).filter(c=>!c.ok).map(c=>(c.blocker?'✗':'⚠')+' 体检 '+esc(c.name)+'：'+esc(c.detail)).join('\n');
       const wn=(r.warnings&&r.warnings.length)?'\n⚠ 健康过了但日志疑似报错：\n'+r.warnings.map(w=>esc(w.container)+': '+esc(w.sample)).join('\n'):'';
-      let html='<pre class="out">'+(r.success?'成功':'失败')+(r.gitRev?' @'+esc(r.gitRev):'')+'\n'+hk+esc(r.output||'')+wn+(r.error?'\n'+esc(r.error):'')+'</pre>';
+      let html='<pre class="out">'+(r.success?'成功':'失败')+(r.gitRev?' @'+esc(r.gitRev):'')+'\n'+(pf?pf+'\n':'')+hk+esc(r.output||'')+wn+(r.error?'\n'+esc(r.error):'')+'</pre>';
       if(r.failLogs&&r.failLogs.length)html+=r.failLogs.map(f=>'<div class="glabel" style="margin-top:10px">'+esc(f.container)+' · 最后日志</div><pre class="out" style="margin-top:6px">'+esc(f.logs||'(空)')+'</pre>').join('');
       out.innerHTML=html;}
     toast(k+(r.success?' 部署成功':' 部署失败'),r.success?'':'err');await Promise.all([doStatus(k),0]);loadHist(k);

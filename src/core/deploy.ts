@@ -4,6 +4,7 @@ import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
 import { recordOp } from "./oplog.js";
+import { preflight } from "./preflight.js";
 import { shQuote as q } from "./sh.js";
 
 function truncate(s: string, n = 4000): string {
@@ -24,6 +25,8 @@ async function gatherDiag(server: import("./types.js").ServerConfig, containers:
 export interface DeployOptions {
   /** 只打印执行计划（含 pre/postDeploy 钩子），不在服务器上跑任何命令、不记历史。 */
   dryRun?: boolean;
+  /** 跳过部署前置体检（目录/docker/磁盘/git remote 快速检查）。 */
+  skipPreflight?: boolean;
 }
 
 export async function deploy(config: Config, projectName: string, opts: DeployOptions = {}): Promise<DeployResult> {
@@ -51,6 +54,18 @@ export async function deploy(config: Config, projectName: string, opts: DeployOp
   }
 
   try {
+    // 部署前置体检：把"确定会失败"的（目录不存在 / docker 没起 / 磁盘爆 / 要 pull 但 remote 连不上）
+    // 在跑任何破坏性命令前拦下，给清楚原因。软告警项照常放行。finally 会记 history + oplog。
+    if (!opts.skipPreflight) {
+      const pf = await preflight(config, projectName);
+      result.preflight = pf.checks;
+      if (!pf.canDeploy) {
+        const bad = pf.checks.filter((c) => c.blocker && !c.ok);
+        result.error = "部署前置体检未通过：" + bad.map((c) => `${c.name}（${c.detail}）`).join("；") + "。修好，或加 --no-preflight 跳过。";
+        return result;
+      }
+    }
+
     result.hooks = [];
     // 0. preDeploy 钩子（deploy 命令前，逐条串行）：DB 迁移 / 备份 / 建索引。任一失败即中止，绝不 pull/部署。
     for (const c of project.preDeploy ?? []) {
