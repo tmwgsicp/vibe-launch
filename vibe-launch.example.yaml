@@ -61,3 +61,10 @@ projects:
   #     dist: .output/public           # 本地构建产物目录
   #     target: /var/www/app           # 服务器上的目标目录（绝对路径，原子替换）
   #     restart: [app-web]             # 换完重启的容器
+  #   # 反代（vl proxy）：声明域名→上游，vibe-launch 生成 Caddy 站点块 + 自动 HTTPS。
+  #   # 用法：vl proxy setup <server>（装 Caddy，每台一次）→ vl proxy apply fullstack
+  #   # 前提：这台机的 80/443 没被 1Panel/nginx 占（裸机 Caddy 独占；被占会告警）。
+  #   proxy:
+  #     domain: app.example.com        # 多个用空格分隔，如 "app.example.com www.app.example.com"
+  #     upstream: 127.0.0.1:8000       # 反代到的本机上游（你的容器/进程监听）
+  #     tls: true                      # 自动签发/续期证书；false 则只听 http

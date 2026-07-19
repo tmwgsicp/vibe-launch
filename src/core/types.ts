@@ -39,6 +39,17 @@ export interface ProjectConfig {
   frontend?: FrontendConfig;
   /** vl env set 默认改的 .env 绝对路径（不填则用 <dir>/.env）。 */
   envFile?: string;
+  /** 反代（vl proxy）：声明"域名 → 上游"，vibe-launch 生成 Caddy 站点块 + reload。裸机 Caddy 独占 80/443。 */
+  proxy?: ProxyConfig;
+}
+
+export interface ProxyConfig {
+  /** 对外域名，如 app.example.com；多个用空格分隔（Caddy 站点地址原生支持）。 */
+  domain: string;
+  /** 上游地址（vibe-launch 反代到这里），host:port，如 127.0.0.1:8000。 */
+  upstream: string;
+  /** 自动 HTTPS：true(默认)则 Caddy 自动签发/续期 Let's Encrypt 证书；false 则只听 http。 */
+  tls?: boolean;
 }
 
 export interface FrontendConfig {

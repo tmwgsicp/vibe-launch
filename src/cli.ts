@@ -15,6 +15,7 @@ import { rollback } from "./core/rollback.js";
 import { deployFrontend } from "./core/frontend.js";
 import { setEnv } from "./core/env.js";
 import { watch } from "./core/watch.js";
+import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -296,9 +297,14 @@ projectCmd
   .option("--containers <list>", "容器名，逗号分隔")
   .option("--health <list>", "健康检查 URL，逗号分隔")
   .option("--restart-cmd <cmd>", "非容器项目(systemd/裸进程)的重启命令，如 'sudo systemctl restart my-svc'")
+  .option("--proxy-domain <domain>", "反代域名（配了则登记 proxy 段，之后 vl proxy apply 生效）")
+  .option("--proxy-upstream <host:port>", "反代上游，如 127.0.0.1:8000（与 --proxy-domain 一起用）")
   .action((name: string, opts) => {
     const c = loadConfig();
     const split = (s?: string) => (s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined);
+    const proxy = opts.proxyDomain
+      ? { domain: opts.proxyDomain, upstream: opts.proxyUpstream || "127.0.0.1:8000" }
+      : undefined;
     addProject(c, name, {
       server: opts.server,
       dir: opts.dir,
@@ -306,6 +312,7 @@ projectCmd
       containers: split(opts.containers),
       health: split(opts.health),
       restartCmd: opts.restartCmd,
+      proxy,
     });
     const path = saveConfig(c);
     console.log(`✅ 项目 ${name} 已登记 → ${opts.server}（写入 ${path}）`);
@@ -404,6 +411,47 @@ program
   .action(async (opts) => {
     const { startUi } = await import("./ui/server.js");
     await startUi(Number(opts.port) || 7777, opts.open !== false);
+  });
+
+const proxyCmd = program.command("proxy").description("反代（Caddy）：装 + 接线 + 声明式站点（域名→上游）");
+proxyCmd
+  .command("setup <server>")
+  .description("在服务器装 Caddy + 接线（Caddyfile import）+ 起服务；检测 80/443 冲突")
+  .action(async (server: string) => {
+    console.log(`==> proxy setup ${server} …`);
+    const r = await setupProxy(cfg(), server);
+    for (const s of r.steps) console.log(`  ${s}`);
+    if (r.success) console.log(`✅ ${server} 已就绪，可 vl proxy apply <项目>`);
+    else { console.error(`❌ ${r.error}`); process.exitCode = 1; }
+  });
+proxyCmd
+  .command("apply <project>")
+  .description("把项目 proxy 段（域名→上游）生成 Caddy 站点块并 reload 生效")
+  .action(async (project: string) => {
+    console.log(`==> proxy apply ${project} …`);
+    const r = await applyProxy(cfg(), project);
+    for (const s of r.steps) console.log(`  ${s}`);
+    if (r.success) console.log(`✅ ${project} 反代已上线（${r.domain}）`);
+    else { console.error(`❌ ${r.error}`); process.exitCode = 1; }
+  });
+proxyCmd
+  .command("rm <project>")
+  .description("删掉项目的 Caddy 站点块并 reload")
+  .action(async (project: string) => {
+    const r = await removeProxy(cfg(), project);
+    for (const s of r.steps) console.log(`  ${s}`);
+    if (!r.success) { console.error(`❌ ${r.error}`); process.exitCode = 1; }
+  });
+proxyCmd
+  .command("ls <server>")
+  .description("列出该服务器上 vibe-launch 管理的站点块")
+  .action(async (server: string) => {
+    const sites = await listProxy(cfg(), server);
+    if (!sites.length) { console.log("（无 vibe-launch 管理的站点块）"); return; }
+    for (const s of sites) {
+      console.log(`# ${s.project}`);
+      console.log(s.content.split("\n").map((l) => "  " + l).join("\n"));
+    }
   });
 
 program
