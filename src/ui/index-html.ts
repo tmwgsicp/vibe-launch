@@ -325,8 +325,9 @@ function rMonitor(){
   if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
   if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻）。等一两分钟再来看趋势。</div>';return;}
   const by={};for(const s of METRICS){const k=s.kind+':'+s.name;(by[k]=by[k]||[]).push(s);}
-  const spark=(vals)=>{const v=vals.slice(-48);const mx=Math.max(1,...v.map(x=>x||0));return '<span class="spk">'+v.map(x=>'<i style="height:'+Math.max(4,Math.round((x||0)/mx*100))+'%"></i>').join('')+'</span>';};
-  let h='<style>.spk{display:inline-flex;align-items:flex-end;gap:1px;height:24px;width:140px;vertical-align:middle}.spk i{flex:1;min-height:1px;background:var(--muted);border-radius:1px;opacity:.65}.upt{display:inline-flex;gap:2px;flex-wrap:wrap;max-width:340px;vertical-align:middle}.upt .dot{margin:0}</style>';
+  // 百分比按 0-100 绝对刻度画（矮=占用低、高=占用高，横向可比），颜色按阈值：≥90 红 / ≥70 黄 / 否则强调色；缺失极淡
+  const spark=(vals)=>{const v=vals.slice(-48);return '<span class="spk">'+v.map(x=>{if(x==null)return '<i style="height:3%;background:var(--line)"></i>';const c=x>=90?'var(--bad)':x>=70?'var(--warn)':'var(--accent)';return '<i style="height:'+Math.max(3,x)+'%;background:'+c+'"></i>';}).join('')+'</span>';};
+  let h='<style>.spk{display:inline-flex;align-items:flex-end;gap:1px;height:24px;width:140px;vertical-align:middle}.spk i{flex:1;min-height:1px;border-radius:1px}.upt{display:inline-flex;gap:2px;flex-wrap:wrap;max-width:340px;vertical-align:middle}.upt .dot{margin:0}</style>';
   h+='<h2 class="sec">服务器 · 内存/磁盘趋势</h2><div class="list">';
   for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
     h+='<div class="row" style="cursor:default;flex-wrap:wrap;gap:8px 14px"><span class="nm">'+esc(n)+'</span>'
