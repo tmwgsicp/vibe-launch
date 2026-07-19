@@ -23,6 +23,8 @@ import { checkExposure } from "../core/portcheck.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js";
 import { doctor, setDockerMirror } from "../core/doctor.js";
 import { lintConfig } from "../core/lint.js";
+import { startCollector } from "../core/monitor.js";
+import { readSamples } from "../core/metrics.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
 import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
 import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
@@ -56,8 +58,18 @@ function tryOpen(url: string): void {
   }
 }
 
-export async function startUi(port = 7777, open = true): Promise<void> {
+export async function startUi(
+  port = 7777,
+  open = true,
+  metrics: { enabled?: boolean; intervalSec?: number } = {}
+): Promise<void> {
   enableSshPool(); // 长驻进程：复用 SSH 连接，翻目录/刷状态近即时
+
+  // 持久化监测：常驻采集（开着操作台 = 在监测），落 ~/.vibe-launch/metrics/。--no-metrics 关。
+  if (metrics.enabled !== false) {
+    try { startCollector(loadConfig(), Math.max(10, metrics.intervalSec ?? 60) * 1000); }
+    catch { /* 没配置等，忽略，不影响 UI */ }
+  }
 
   // ── 本地操作台的安全底座 ──
   // 威胁模型（即便只监听 127.0.0.1 也真实存在）：① 你浏览器里打开的任意恶意网页可向
@@ -186,6 +198,10 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 部署历史
       if (path === "/api/history" && req.method === "GET") {
         return json(res, 200, getHistory(q.get("project") || undefined, 20));
+      }
+      // 监测样本（历史时序）
+      if (path === "/api/metrics" && req.method === "GET") {
+        return json(res, 200, readSamples(q.get("target") || undefined, parseInt(q.get("limit") || "300", 10) || 300));
       }
       // 清单 lint（配置常见错误，本地）
       if (path === "/api/lint" && req.method === "GET") {

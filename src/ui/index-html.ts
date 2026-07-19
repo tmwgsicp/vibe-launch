@@ -152,6 +152,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
       <a data-v="overview" class="active">总览</a>
       <a data-v="servers">服务器</a>
       <a data-v="projects">项目</a>
+      <a data-v="monitor">监测</a>
       <a data-v="mcp">MCP</a>
       <a data-v="log">日志</a>
       <a data-v="settings">设置</a>
@@ -172,6 +173,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
       <section class="view on" id="view-overview"></section>
       <section class="view" id="view-servers"></section>
       <section class="view" id="view-projects"></section>
+      <section class="view" id="view-monitor"></section>
       <section class="view" id="view-mcp"></section>
       <section class="view" id="view-log"></section>
       <section class="view" id="view-settings"></section>
@@ -286,10 +288,10 @@ function applyAutoref(){if(timer){clearInterval(timer);timer=null;}if(AUTOREF)ti
 function setHideip(on){HIDEIP=on;try{localStorage.setItem('vl-hideip',on?'1':'')}catch(e){}render();}
 
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.v));
-function go(v){VIEW=v;if(v==='log')OPLOG=null;
+function go(v){VIEW=v;if(v==='log')OPLOG=null;if(v==='monitor')METRICS=null;
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='view-'+v));
-  const T={overview:['总览','部署状态一眼概况'],servers:['服务器','接入的机器、指标、隧道'],projects:['项目','部署、历史、容器、转 git'],mcp:['MCP','让 AI 直接调用 vibe-launch'],log:['操作日志','所有改动型操作的审计流，便于追踪排查'],settings:['设置','外观、行为、关于']};
+  const T={overview:['总览','部署状态一眼概况'],servers:['服务器','接入的机器、指标、隧道'],projects:['项目','部署、历史、容器、转 git'],monitor:['监测','服务器指标 + 项目健康的历史趋势'],mcp:['MCP','让 AI 直接调用 vibe-launch'],log:['操作日志','所有改动型操作的审计流，便于追踪排查'],settings:['设置','外观、行为、关于']};
   $('vtitle').textContent=(T[v]||T.overview)[0];$('vsub').textContent=(T[v]||T.overview)[1];
   $('addBtn').style.display=(v==='servers'||v==='projects')?'':'none';
   $('addBtn').textContent=v==='servers'?'接入服务器':'登记项目';
@@ -314,10 +316,33 @@ async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textCont
     for(const id of EXP){if(id.slice(0,2)==='s:')loadCts(id.slice(2));else if(id.slice(0,2)==='p:')loadHist(id.slice(2));}
     render();}
   finally{if(b){b.disabled=false;b.textContent='刷新';}}}
-function render(){({overview:rOverview,servers:rServers,projects:rProjects,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
-let OPLOG=null,LINT=[];
+function render(){({overview:rOverview,servers:rServers,projects:rProjects,monitor:rMonitor,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
+let OPLOG=null,LINT=[],METRICS=null;
 async function loadOplog(){try{OPLOG=await api('/api/oplog?limit=150');}catch(e){OPLOG=[];}if(VIEW==='log')render();}
 async function loadLint(){try{LINT=await api('/api/lint');}catch(e){LINT=[];}if(VIEW==='overview')render();}
+async function loadMetrics(){try{METRICS=await api('/api/metrics?limit=900');}catch(e){METRICS=[];}if(VIEW==='monitor')render();}
+function rMonitor(){
+  if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
+  if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻）。等一两分钟再来看趋势。</div>';return;}
+  const by={};for(const s of METRICS){const k=s.kind+':'+s.name;(by[k]=by[k]||[]).push(s);}
+  const spark=(vals)=>{const v=vals.slice(-48);const mx=Math.max(1,...v.map(x=>x||0));return '<span class="spk">'+v.map(x=>'<i style="height:'+Math.max(4,Math.round((x||0)/mx*100))+'%"></i>').join('')+'</span>';};
+  let h='<style>.spk{display:inline-flex;align-items:flex-end;gap:1px;height:24px;width:140px;vertical-align:middle}.spk i{flex:1;min-height:1px;background:var(--muted);border-radius:1px;opacity:.65}.upt{display:inline-flex;gap:2px;flex-wrap:wrap;max-width:340px;vertical-align:middle}.upt .dot{margin:0}</style>';
+  h+='<h2 class="sec">服务器 · 内存/磁盘趋势</h2><div class="list">';
+  for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
+    h+='<div class="row" style="cursor:default;flex-wrap:wrap;gap:8px 14px"><span class="nm">'+esc(n)+'</span>'
+      +'<span class="mt">CPU '+(l.load1!=null&&l.cores?Math.round(l.load1/l.cores*100)+'%':'—')+' · 内存 '+(l.memPct!=null?l.memPct+'%':'—')+' · 磁盘 '+(l.diskPct!=null?l.diskPct+'%':'—')+'</span><span class="sp"></span>'
+      +'<span class="mt" style="font-size:11px">内存</span>'+spark(a.map(x=>x.memPct))
+      +'<span class="mt" style="font-size:11px">磁盘</span>'+spark(a.map(x=>x.diskPct))+'</div>';
+  }
+  h+='</div><h2 class="sec">项目健康在线率（近 48 次采集）</h2><div class="list">';
+  for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-48);
+    const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
+    const strip=a.map(x=>'<span class="dot '+(x.reachable===false||x.healthOk===false?'bad':'ok')+'"></span>').join('');
+    h+='<div class="row" style="cursor:default;flex-wrap:wrap;gap:6px 12px"><span class="nm">'+esc(n)+'</span><span class="mt">'+(rate!=null?rate+'% 在线':'—')+'</span><span class="sp"></span><span class="upt">'+strip+'</span></div>';
+  }
+  h+='</div>';
+  $('view-monitor').innerHTML=h;
+}
 function rLog(){
   if(OPLOG===null){$('view-log').innerHTML='<div class="empty">加载中…</div>';loadOplog();return;}
   if(!OPLOG.length){$('view-log').innerHTML='<div class="empty">暂无操作记录。部署 / 重启 / 回滚 / 改 env / 穿透执行 / 反代 / 接入 / 删容器 等操作都会记在这里。</div>';return;}

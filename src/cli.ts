@@ -20,6 +20,7 @@ import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js"
 import { readOps } from "./core/oplog.js";
 import { doctor, setDockerMirror } from "./core/doctor.js";
 import { lintConfig } from "./core/lint.js";
+import { startCollector } from "./core/monitor.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -437,12 +438,17 @@ program
 
 program
   .command("ui")
-  .description("启动本地可视化操作台（浏览器里看状态 + 部署/接入/登记，纯本地）")
+  .description("启动本地可视化操作台（浏览器里看状态 + 部署/接入/登记，纯本地）；同时常驻采集监测样本")
   .option("--port <port>", "监听端口", "7777")
   .option("--no-open", "不自动打开浏览器")
+  .option("--no-metrics", "不常驻采集监测样本")
+  .option("--metrics-interval <sec>", "监测采集周期秒数（最小 10）", "60")
   .action(async (opts) => {
     const { startUi } = await import("./ui/server.js");
-    await startUi(Number(opts.port) || 7777, opts.open !== false);
+    await startUi(Number(opts.port) || 7777, opts.open !== false, {
+      enabled: opts.metrics !== false,
+      intervalSec: Number(opts.metricsInterval) || 60,
+    });
   });
 
 const proxyCmd = program.command("proxy").description("反代（Caddy）：装 + 接线 + 声明式站点（域名→上游）");
@@ -553,6 +559,22 @@ program
       const t = new Date(o.ts).toLocaleString();
       console.log(`${t}  ${o.ok ? "✓" : "✗"} ${o.action.padEnd(15)} ${o.target}${o.detail ? "  " + o.detail : ""}`);
     }
+  });
+
+program
+  .command("monitor")
+  .description("常驻采集监测样本（服务器指标 + 项目状态）落 ~/.vibe-launch/metrics/；开着 vl ui 也会自动采")
+  .option("--interval <sec>", "采集周期秒数（最小 10）", "60")
+  .action(async (opts) => {
+    const iv = Math.max(10, Number(opts.interval) || 60) * 1000;
+    console.log(`==> 监测采集中，每 ${iv / 1000}s 一轮（Ctrl+C 停）…`);
+    startCollector(cfg(), iv, (s) => {
+      const t = new Date().toLocaleTimeString();
+      const down = s.filter((x) => x.reachable === false).map((x) => x.name);
+      const bad = s.filter((x) => x.kind === "project" && x.healthOk === false).map((x) => x.name);
+      console.log(`  ${t} 采 ${s.length} 样本${down.length ? "  ⚠ 连不上: " + down.join(",") : ""}${bad.length ? "  ⚠ 健康红: " + bad.join(",") : ""}`);
+    });
+    await new Promise(() => {}); // 常驻
   });
 
 program
