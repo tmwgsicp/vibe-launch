@@ -22,6 +22,7 @@ import { VERSION } from "../version.js";
 import { checkExposure } from "../core/portcheck.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js";
 import { doctor, setDockerMirror } from "../core/doctor.js";
+import { lintConfig } from "../core/lint.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
 import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
 import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
@@ -185,6 +186,10 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 部署历史
       if (path === "/api/history" && req.method === "GET") {
         return json(res, 200, getHistory(q.get("project") || undefined, 20));
+      }
+      // 清单 lint（配置常见错误，本地）
+      if (path === "/api/lint" && req.method === "GET") {
+        return json(res, 200, lintConfig(loadConfig()));
       }
       // 操作日志（全量审计流：deploy/restart/rollback/env/run/proxy/接入/删容器…）
       if (path === "/api/oplog" && req.method === "GET") {

@@ -11,6 +11,7 @@ import { setupGit } from "./core/setup-git.js";
 import { getHistory } from "./core/history.js";
 import { readOps } from "./core/oplog.js";
 import { doctor } from "./core/doctor.js";
+import { lintConfig } from "./core/lint.js";
 import { preDeploy } from "./core/predeploy.js";
 import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
@@ -209,6 +210,13 @@ export async function startMcp() {
       try { return text(await doctor(loadConfig(), server)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
     }
+  );
+
+  server.tool(
+    "check_config",
+    "清单 lint（只读，本地）：扫配置常见错误 —— Windows 路径 dir（git-bash 转换坑）、占位/空 deploy、连不上的 server（缺 auth）、frontend/envFile 路径问题等。登记项目后、部署前用它自查配置。",
+    {},
+    async () => text(lintConfig(loadConfig()))
   );
 
   server.tool(

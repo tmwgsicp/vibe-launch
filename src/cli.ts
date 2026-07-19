@@ -19,6 +19,7 @@ import { watch } from "./core/watch.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js";
 import { readOps } from "./core/oplog.js";
 import { doctor, setDockerMirror } from "./core/doctor.js";
+import { lintConfig } from "./core/lint.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -528,6 +529,16 @@ program
       console.log(`✅ 已配镜像并重启 docker（${r.mirrors.join(", ")}）`);
       console.log(`   建议 vl doctor ${server} 复验 Docker Hub 是否已提速（公共源常失效）`);
     } else { console.error(`❌ ${r.error}`); process.exitCode = 1; }
+  });
+
+program
+  .command("lint")
+  .description("检查清单配置的常见错误（Windows 路径 dir / 占位 deploy / 连不上的 server 等）")
+  .action(() => {
+    const issues = lintConfig(cfg());
+    if (!issues.length) { console.log("✅ 配置没发现问题"); return; }
+    for (const i of issues) console.log(`${i.level === "error" ? "✗" : "⚠"} ${i.target.padEnd(16)} ${i.message}`);
+    if (issues.some((i) => i.level === "error")) process.exitCode = 1;
   });
 
 program

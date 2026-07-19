@@ -309,14 +309,15 @@ async function loadTun(){try{TUN=await api('/api/tunnels');}catch(e){TUN=[];}}
 async function loadMcp(){try{MCP=await api('/api/mcp-info');}catch(e){}}
 async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textContent='刷新中…';}
   if(VIEW==='log')OPLOG=null;
-  try{await loadConfig();render();loadStats();await Promise.all([loadStatus(),loadTun()]);
+  try{await loadConfig();render();loadStats();loadLint();await Promise.all([loadStatus(),loadTun()]);
     // 手动刷新时连带刷新当前展开的容器/历史（仍保留旧值，不闪）
     for(const id of EXP){if(id.slice(0,2)==='s:')loadCts(id.slice(2));else if(id.slice(0,2)==='p:')loadHist(id.slice(2));}
     render();}
   finally{if(b){b.disabled=false;b.textContent='刷新';}}}
 function render(){({overview:rOverview,servers:rServers,projects:rProjects,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
-let OPLOG=null;
+let OPLOG=null,LINT=[];
 async function loadOplog(){try{OPLOG=await api('/api/oplog?limit=150');}catch(e){OPLOG=[];}if(VIEW==='log')render();}
+async function loadLint(){try{LINT=await api('/api/lint');}catch(e){LINT=[];}if(VIEW==='overview')render();}
 function rLog(){
   if(OPLOG===null){$('view-log').innerHTML='<div class="empty">加载中…</div>';loadOplog();return;}
   if(!OPLOG.length){$('view-log').innerHTML='<div class="empty">暂无操作记录。部署 / 重启 / 回滚 / 改 env / 穿透执行 / 反代 / 接入 / 删容器 等操作都会记在这里。</div>';return;}
@@ -343,6 +344,7 @@ function rOverview(){
     (s.containers||[]).forEach(c=>{if(!/running|up/i.test(c.state))iss.push(k+' '+c.name+' '+c.state);});
     (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 健康 '+h.httpCode);});});
   let h=iss.length?'<div class="banner warn"><b>'+iss.length+' 项需注意</b> · '+iss.map(esc).join(' · ')+'</div>':'<div class="banner"><b>一切正常</b></div>';
+  if(LINT&&LINT.length)h+='<div class="banner warn"><b>配置检查 '+LINT.length+' 项</b> · '+LINT.map(x=>(x.level==='error'?'✗ ':'⚠ ')+esc(x.target)+'：'+esc(x.message)).join('　·　')+'</div>';
   h+='<h2 class="sec">服务器</h2><div class="list">';
   h+=Object.keys(srv).map(n=>{const s=STATS[n];let m='';
     if(s&&s.loading)m='<span class="mt"><span class="spin"></span></span>';
@@ -847,6 +849,6 @@ try{var _as=+localStorage.getItem('vl-autoref-sec');if(_as)AUTOREF_SEC=_as;}catc
 applyTheme();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(THEME==='system')applyTheme();});
 logDlg.addEventListener('close',()=>{if(LOG.es){LOG.es.close();LOG.es=null;}});
-(async()=>{await loadConfig();loadMcp().then(()=>{if(VIEW==='mcp')render();});go('overview');loadStats();await Promise.all([loadStatus(),loadTun()]);render();applyAutoref();})();
+(async()=>{await loadConfig();loadMcp().then(()=>{if(VIEW==='mcp')render();});go('overview');loadStats();loadLint();await Promise.all([loadStatus(),loadTun()]);render();applyAutoref();})();
 </script>
 </body></html>`;
