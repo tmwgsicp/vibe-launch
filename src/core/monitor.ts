@@ -3,6 +3,7 @@
 import type { Config } from "./types.js";
 import { getServerStats } from "./serverstats.js";
 import { status } from "./status.js";
+import { certDaysByProject } from "./cert.js";
 import { appendSamples, pruneOld, type Sample } from "./metrics.js";
 
 const pct = (used?: number, total?: number) =>
@@ -38,12 +39,15 @@ export async function collectOnce(config: Config, now: number): Promise<Sample[]
           memPct: pct(st.memUsedMb, st.memTotalMb),
           swapPct: pct(st.swapUsedMb, st.swapTotalMb),
           diskPct: pct(st.diskUsedMb, st.diskTotalMb),
+          inodePct: pct(st.inodesUsed, st.inodesTotal),
+          tcpConns: st.tcpEstablished ?? null,
           netRx, netTx,
         });
       } catch { samples.push({ ts: now, kind: "server", name, reachable: false }); }
     })
   );
 
+  const certMap = await certDaysByProject(config); // 域名证书到期（本机 TLS 直连，不走 SSH）
   await Promise.allSettled(
     Object.keys(config.projects || {}).map(async (name) => {
       try {
@@ -57,6 +61,7 @@ export async function collectOnce(config: Config, now: number): Promise<Sample[]
           cUp: cts.filter((c) => isUp(c.state)).length,
           cTotal: cts.length,
           restarts: cts.reduce((a, c) => a + (c.restartCount || 0), 0),
+          certDays: name in certMap ? certMap[name] : null,
         });
       } catch { samples.push({ ts: now, kind: "project", name, reachable: false }); }
     })

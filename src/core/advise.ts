@@ -53,6 +53,8 @@ export function advise(config: Config): Advisory[] {
       adv.push({ level: l.diskPct >= 95 ? "error" : "warn", target: name, problem: `磁盘 ${l.diskPct}%`, fix: "清 docker 悬垂镜像/卷，或定位大目录", action: { kind: "cmd", label: "看大目录", server: name, cmd: "du -sh /* 2>/dev/null | sort -rh | head; docker system df" } });
     if (l.swapPct != null && l.swapPct >= 60)
       adv.push({ level: "warn", target: name, problem: `Swap ${l.swapPct}%（内存压力）`, fix: "看吃内存的进程，考虑加内存/限容器", action: { kind: "cmd", label: "看内存占用", server: name, cmd: "ps -eo pid,comm,%mem --sort=-%mem | head" } });
+    if (l.inodePct != null && l.inodePct >= 90)
+      adv.push({ level: l.inodePct >= 95 ? "error" : "warn", target: name, problem: `inode ${l.inodePct}%（快耗尽，与磁盘空间无关）`, fix: "找小文件多的目录清理（常见：日志、session、缓存）", action: { kind: "cmd", label: "找 inode 大户", server: name, cmd: "for d in /var /home /tmp /opt /root; do printf '%s ' $d; find $d -xdev 2>/dev/null | wc -l; done | sort -k2 -rn" } });
   }
 
   for (const name of Object.keys(config.projects || {})) {
@@ -77,6 +79,11 @@ export function advise(config: Config): Advisory[] {
     const rd = rs.length >= 2 ? rs[rs.length - 1] - rs[0] : 0;
     if (rd > 0)
       adv.push({ level: "warn", target: name, problem: `容器观察期内重启 +${rd}（疑似崩溃循环）`, fix: "看日志找反复崩溃的原因", action: logsAction });
+
+    if (l.certDays != null && l.certDays <= 14) {
+      const d0 = p.proxy?.domain?.trim().split(/[\s,]+/)[0] || "域名";
+      adv.push({ level: l.certDays <= 3 ? "error" : "warn", target: name, problem: l.certDays < 0 ? "HTTPS 证书已过期" : `HTTPS 证书 ${l.certDays} 天后过期`, fix: "vibe-launch 管的 Caddy 会自动续；否则手动续（acme.sh / certbot / 1Panel 续签）", action: { kind: "cmd", label: "看证书日期", server, cmd: `echo | openssl s_client -servername ${d0} -connect ${d0}:443 2>/dev/null | openssl x509 -noout -dates` } });
+    }
   }
 
   for (const i of lintConfig(config))

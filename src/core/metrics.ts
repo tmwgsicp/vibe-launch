@@ -18,6 +18,8 @@ export interface Sample {
   memPct?: number | null;
   swapPct?: number | null;
   diskPct?: number | null;
+  inodePct?: number | null;
+  tcpConns?: number | null;
   netRx?: number | null; // MB/s（采集端从累计字节算的速率）
   netTx?: number | null;
   // project
@@ -25,6 +27,7 @@ export interface Sample {
   cUp?: number;
   cTotal?: number;
   restarts?: number; // 容器重启总次数（涨=崩溃循环）
+  certDays?: number | null; // 域名证书距过期天数（配了 proxy.domain 才有）
 }
 
 const dayName = (ts: number) => new Date(ts).toISOString().slice(0, 10);

@@ -16,6 +16,9 @@ export interface ServerStats {
   netTxBytes?: number; // 累计发字节
   diskUsedMb?: number;
   diskTotalMb?: number;
+  inodesUsed?: number;
+  inodesTotal?: number;
+  tcpEstablished?: number; // 已建立的 TCP 连接数
   uptime?: string;
   containersRunning?: number;
   containersTotal?: number;
@@ -42,6 +45,8 @@ const STATS_CMD = [
   `echo "W:$(awk '/^SwapTotal:/{t=$2}/^SwapFree:/{fr=$2}END{print (t-fr)+0, t+0}' /proc/meminfo)"`,
   `echo "N:$(awk 'NR>2{gsub(/:/," ");if($1!="lo"){rx+=$2;tx+=$10}}END{print rx+0, tx+0}' /proc/net/dev 2>/dev/null)"`,
   `echo "D:$(df -Pk / 2>/dev/null | awk 'NR==2{print $3, $2}')"`,
+  `echo "I:$(df -Pi / 2>/dev/null | awk 'NR==2{print $3, $2}')"`,
+  `echo "T:$(ss -H -t state established 2>/dev/null | wc -l)"`,
   `echo "U:$(uptime -p 2>/dev/null | sed 's/^up //' || awk '{d=int($1/86400);h=int(($1%86400)/3600);m=int(($1%3600)/60);printf (d?d" 天 ":"")(h?h" 小时 ":"")m" 分钟"}' /proc/uptime)"`,
   `echo "K:$(docker ps -q 2>/dev/null | wc -l) $(docker ps -aq 2>/dev/null | wc -l)"`,
   `echo "O:$(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" || cat /etc/redhat-release 2>/dev/null || uname -o 2>/dev/null)"`,
@@ -67,6 +72,8 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
     const swap = pick("W:").split(/\s+/).map(Number).map(kbToMb);  // 同 kB → MB
     const net = pick("N:").split(/\s+/).map(Number);               // 累计字节
     const disk = pick("D:").split(/\s+/).map(Number).map(kbToMb);  // df -Pk 是 kB → MB
+    const ino = pick("I:").split(/\s+/).map(Number);               // inode 用量/总量（个数）
+    const tcp = parseInt(pick("T:"), 10);
     const k = pick("K:").split(/\s+/).map(Number);
     const cores = parseInt(pick("C:"), 10);
 
@@ -82,6 +89,9 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
       netTxBytes: !isNaN(net[1]) ? net[1] : undefined,
       diskUsedMb: !isNaN(disk[0]) ? disk[0] : undefined,
       diskTotalMb: !isNaN(disk[1]) ? disk[1] : undefined,
+      inodesUsed: !isNaN(ino[0]) ? ino[0] : undefined,
+      inodesTotal: !isNaN(ino[1]) ? ino[1] : undefined,
+      tcpEstablished: !isNaN(tcp) ? tcp : undefined,
       uptime: pick("U:") || undefined,
       containersRunning: !isNaN(k[0]) ? k[0] : undefined,
       containersTotal: !isNaN(k[1]) ? k[1] : undefined,

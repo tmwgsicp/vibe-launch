@@ -347,8 +347,10 @@ function rMonitor(){
     h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="sp"></span>'
       +'<span class="mlab">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
       +'<span class="mlab" style="margin-left:8px">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)
+      +'<span class="mlab" style="margin-left:8px">inode</span>'+sl(a.map(x=>x.inodePct))+pv(l.inodePct)
       +'<span class="mlab" style="margin-left:8px">Swap</span>'+sl(a.map(x=>x.swapPct))+pv(l.swapPct)
       +'<span class="mlab" style="margin-left:8px">网络↓</span>'+slA(a.map(x=>x.netRx))+'<span class="mval" style="min-width:auto">'+nt(l.netRx)+' <span style="color:var(--faint)">↑'+nt(l.netTx)+'</span></span>'
+      +'<span class="mlab" style="margin-left:8px">连接</span><span class="mval" style="min-width:auto">'+(l.tcpConns!=null?l.tcpConns:'—')+'</span>'
       +'</div>';
   }
   h+='<h2 class="sec">项目健康在线率 · 近 60 次采集</h2>';
@@ -356,8 +358,10 @@ function rMonitor(){
     const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
     const rs=a.map(x=>x.restarts).filter(x=>x!=null);const rd=rs.length>=2?rs[rs.length-1]-rs[0]:0;
     const flag=rd>0?'<span class="mval" style="color:var(--bad);min-width:auto" title="观察期内容器重启 +'+rd+' 次，疑似崩溃循环">↻ +'+rd+'</span>':'';
+    const cd=(a.slice(-1)[0]||{}).certDays;
+    const cert=cd!=null?'<span class="mval" style="min-width:auto;color:'+(cd<=3?'var(--bad)':cd<=14?'var(--warn)':'var(--muted)')+'" title="HTTPS 证书剩余天数">证书 '+cd+'d</span>':'';
     const strip=a.map(x=>'<span class="dot '+(x.reachable===false||x.healthOk===false?'bad':'ok')+'"></span>').join('');
-    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span>'+flag+'<span class="sp"></span><span class="upt">'+strip+'</span></div>';
+    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span>'+cert+flag+'<span class="sp"></span><span class="upt">'+strip+'</span></div>';
   }
   $('view-monitor').innerHTML=h;
 }
