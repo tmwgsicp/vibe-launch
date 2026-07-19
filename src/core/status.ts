@@ -34,8 +34,10 @@ export async function status(config: Config, projectName: string): Promise<Statu
 
     // 容器状态
     for (const name of project.containers ?? []) {
-      const r = await runOnServer(server, `docker inspect -f '{{.State.Status}}' ${q(name)} 2>/dev/null || echo missing`);
-      result.containers.push({ name, state: r.stdout.trim() || "unknown" });
+      // 一并取 RestartCount：容器状态还是 running 但 RestartCount 在涨 = 崩溃循环
+      const r = await runOnServer(server, `docker inspect -f '{{.State.Status}} {{.RestartCount}}' ${q(name)} 2>/dev/null || echo missing`);
+      const [state, rc] = r.stdout.trim().split(/\s+/);
+      result.containers.push({ name, state: state || "unknown", restartCount: rc != null && rc !== "" ? Number(rc) || 0 : undefined });
     }
 
     // 非容器项目(systemd)：从 restartCmd 解析服务名，systemctl is-active 展示状态。

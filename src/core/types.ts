@@ -105,7 +105,7 @@ export interface StatusResult {
   gitRev?: string;
   gitBranch?: string;
   gitRepo?: string; // origin remote URL（无则说明非 git 接管）
-  containers: { name: string; state: string }[];
+  containers: { name: string; state: string; restartCount?: number }[];
   health: { url: string; httpCode: string; ok: boolean }[];
   reachable: boolean;
   error?: string;

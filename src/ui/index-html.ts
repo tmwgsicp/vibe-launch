@@ -332,19 +332,30 @@ function rMonitor(){
     const last=v[n-1],col=last==null?'var(--muted)':last>=90?'var(--bad)':last>=70?'var(--warn)':'var(--accent)';
     return '<svg class="sl" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts.join(' ')+'" style="fill:none;stroke:'+col+';stroke-width:1.4px;stroke-linejoin:round;stroke-linecap:round"/></svg>';};
   const pv=(x)=>x==null?'<span class="mval">—</span>':'<span class="mval" style="color:'+(x>=90?'var(--bad)':x>=70?'var(--warn)':'var(--content)')+'">'+x+'%</span>';
-  let h='<style>.sl{width:120px;height:22px;vertical-align:middle}.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:11px 2px;border-bottom:1px solid var(--line)}.mrow .nm{min-width:112px}.mlab{color:var(--muted);font-size:12px}.mval{font-variant-numeric:tabular-nums;font-size:12.5px;min-width:40px;text-align:right}.upt{display:inline-flex;gap:2px;flex-wrap:wrap}.upt .dot{margin:0}</style>';
+  // 非百分比指标（网络吞吐）：按序列最大值自适应缩放，mono 线。
+  const slA=(vals)=>{const v=vals.slice(-60),n=v.length,W=120,H=22;if(!n)return '<svg class="sl" viewBox="0 0 120 22"></svg>';
+    const mx=Math.max(0.01,...v.map(x=>x==null?0:x)),yOf=x=>H-Math.max(0,(x==null?0:x))/mx*(H-2)-1;
+    const pts=n===1?['0,'+yOf(v[0]).toFixed(1),W+','+yOf(v[0]).toFixed(1)]:v.map((x,i)=>(i/(n-1)*W).toFixed(1)+','+yOf(x).toFixed(1));
+    return '<svg class="sl" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts.join(' ')+'" style="fill:none;stroke:var(--accent);stroke-width:1.4px;stroke-linejoin:round;stroke-linecap:round"/></svg>';};
+  const nt=(v)=>v==null?'—':(v>=1?v.toFixed(1):v.toFixed(2))+'M';
+  let h='<style>.sl{width:110px;height:22px;vertical-align:middle}.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:11px 2px;border-bottom:1px solid var(--line)}.mrow .nm{min-width:108px;font-weight:500}.mlab{color:var(--muted);font-size:12px}.mval{font-variant-numeric:tabular-nums;font-size:12.5px;min-width:40px;text-align:right}.upt{display:inline-flex;gap:2px;flex-wrap:wrap}.upt .dot{margin:0}</style>';
   h+='<div class="dsub" style="margin:2px 0 8px">开着操作台每 60s 自动采一次（也可 <code>vl monitor</code> 常驻），落 ~/.vibe-launch/metrics/。这里只看<b>时间趋势</b> —— 当前值 / 详情在总览、服务器页。</div>';
   h+='<h2 class="sec">服务器 · 内存 / 磁盘趋势</h2>';
   for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
     h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="sp"></span>'
       +'<span class="mlab">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
-      +'<span class="mlab" style="margin-left:8px">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)+'</div>';
+      +'<span class="mlab" style="margin-left:8px">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)
+      +'<span class="mlab" style="margin-left:8px">Swap</span>'+sl(a.map(x=>x.swapPct))+pv(l.swapPct)
+      +'<span class="mlab" style="margin-left:8px">网络↓</span>'+slA(a.map(x=>x.netRx))+'<span class="mval" style="min-width:auto">'+nt(l.netRx)+' <span style="color:var(--faint)">↑'+nt(l.netTx)+'</span></span>'
+      +'</div>';
   }
   h+='<h2 class="sec">项目健康在线率 · 近 60 次采集</h2>';
   for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-60);
     const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
+    const rs=a.map(x=>x.restarts).filter(x=>x!=null);const rd=rs.length>=2?rs[rs.length-1]-rs[0]:0;
+    const flag=rd>0?'<span class="mval" style="color:var(--bad);min-width:auto" title="观察期内容器重启 +'+rd+' 次，疑似崩溃循环">↻ +'+rd+'</span>':'';
     const strip=a.map(x=>'<span class="dot '+(x.reachable===false||x.healthOk===false?'bad':'ok')+'"></span>').join('');
-    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span><span class="sp"></span><span class="upt">'+strip+'</span></div>';
+    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span>'+flag+'<span class="sp"></span><span class="upt">'+strip+'</span></div>';
   }
   $('view-monitor').innerHTML=h;
 }

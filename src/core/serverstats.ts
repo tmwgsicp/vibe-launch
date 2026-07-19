@@ -10,6 +10,10 @@ export interface ServerStats {
   cpuModel?: string;
   memUsedMb?: number;
   memTotalMb?: number;
+  swapUsedMb?: number;
+  swapTotalMb?: number;
+  netRxBytes?: number; // 累计收字节（非 lo），采集端算速率
+  netTxBytes?: number; // 累计发字节
   diskUsedMb?: number;
   diskTotalMb?: number;
   uptime?: string;
@@ -35,6 +39,8 @@ const STATS_CMD = [
   `echo "C:$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)"`,
   `echo "P:$(sed -n 's/^model name[[:space:]]*: //p; s/^Hardware[[:space:]]*: //p; s/^Model[[:space:]]*: //p' /proc/cpuinfo | head -1)"`,
   `echo "M:$(awk '/^MemTotal:/{t=$2}/^MemAvailable:/{av=$2}/^MemFree:/{f=$2}/^Buffers:/{b=$2}/^Cached:/{c=$2}END{a=(av!=""?av:f+b+c);print (t-a), t}' /proc/meminfo)"`,
+  `echo "W:$(awk '/^SwapTotal:/{t=$2}/^SwapFree:/{fr=$2}END{print (t-fr)+0, t+0}' /proc/meminfo)"`,
+  `echo "N:$(awk 'NR>2{gsub(/:/," ");if($1!="lo"){rx+=$2;tx+=$10}}END{print rx+0, tx+0}' /proc/net/dev 2>/dev/null)"`,
   `echo "D:$(df -Pk / 2>/dev/null | awk 'NR==2{print $3, $2}')"`,
   `echo "U:$(uptime -p 2>/dev/null | sed 's/^up //' || awk '{d=int($1/86400);h=int(($1%86400)/3600);m=int(($1%3600)/60);printf (d?d" 天 ":"")(h?h" 小时 ":"")m" 分钟"}' /proc/uptime)"`,
   `echo "K:$(docker ps -q 2>/dev/null | wc -l) $(docker ps -aq 2>/dev/null | wc -l)"`,
@@ -58,6 +64,8 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
 
     const load = pick("L:").split(/\s+/).map(Number);
     const mem = pick("M:").split(/\s+/).map(Number).map(kbToMb);   // meminfo 是 kB → MB
+    const swap = pick("W:").split(/\s+/).map(Number).map(kbToMb);  // 同 kB → MB
+    const net = pick("N:").split(/\s+/).map(Number);               // 累计字节
     const disk = pick("D:").split(/\s+/).map(Number).map(kbToMb);  // df -Pk 是 kB → MB
     const k = pick("K:").split(/\s+/).map(Number);
     const cores = parseInt(pick("C:"), 10);
@@ -68,6 +76,10 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
       cores: isNaN(cores) ? undefined : cores,
       memUsedMb: !isNaN(mem[0]) ? mem[0] : undefined,
       memTotalMb: !isNaN(mem[1]) ? mem[1] : undefined,
+      swapUsedMb: !isNaN(swap[0]) ? swap[0] : undefined,
+      swapTotalMb: !isNaN(swap[1]) ? swap[1] : undefined,
+      netRxBytes: !isNaN(net[0]) ? net[0] : undefined,
+      netTxBytes: !isNaN(net[1]) ? net[1] : undefined,
       diskUsedMb: !isNaN(disk[0]) ? disk[0] : undefined,
       diskTotalMb: !isNaN(disk[1]) ? disk[1] : undefined,
       uptime: pick("U:") || undefined,

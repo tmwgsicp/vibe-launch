@@ -16,11 +16,15 @@ export interface Sample {
   load1?: number | null;
   cores?: number | null;
   memPct?: number | null;
+  swapPct?: number | null;
   diskPct?: number | null;
+  netRx?: number | null; // MB/s（采集端从累计字节算的速率）
+  netTx?: number | null;
   // project
   healthOk?: boolean | null;
   cUp?: number;
   cTotal?: number;
+  restarts?: number; // 容器重启总次数（涨=崩溃循环）
 }
 
 const dayName = (ts: number) => new Date(ts).toISOString().slice(0, 10);
