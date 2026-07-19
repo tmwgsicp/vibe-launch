@@ -44,7 +44,8 @@ function curlReason(rc: number, code: string, err: string): string {
   if (rc === 6) return "DNS 解析失败（这台机解析不了域名，查 /etc/resolv.conf）";
   if (rc === 7) return "连接失败（拒绝/无路由/被 RST，可能无外网或防火墙拦）";
   if (rc === 28) return "连接超时（典型被墙/丢包）";
-  if ([35, 51, 53, 58, 59, 60, 77, 83].includes(rc)) return "TLS/证书问题";
+  if ([60, 77].includes(rc)) return "CA 根证书缺失/过期（装/重装 ca-certificates 修，与网络无关）";
+  if ([35, 51, 53, 58, 59, 83].includes(rc)) return "TLS 握手/证书问题";
   if (rc === 5) return "代理解析失败";
   const e = (err || "").replace(/^curl:\s*/i, "").trim();
   return e ? e.slice(0, 80) : rc ? "curl 退出码 " + rc : "无 HTTP 响应";
