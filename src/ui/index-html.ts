@@ -323,25 +323,29 @@ async function loadLint(){try{LINT=await api('/api/lint');}catch(e){LINT=[];}if(
 async function loadMetrics(){try{METRICS=await api('/api/metrics?limit=900');}catch(e){METRICS=[];}if(VIEW==='monitor')render();}
 function rMonitor(){
   if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
-  if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻）。等一两分钟再来看趋势。</div>';return;}
+  if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻），等一两分钟再来看趋势。</div>';return;}
   const by={};for(const s of METRICS){const k=s.kind+':'+s.name;(by[k]=by[k]||[]).push(s);}
-  // 百分比按 0-100 绝对刻度画（矮=占用低、高=占用高，横向可比），颜色按阈值：≥90 红 / ≥70 黄 / 否则强调色；缺失极淡
-  const spark=(vals)=>{const v=vals.slice(-48);return '<span class="spk">'+v.map(x=>{if(x==null)return '<i style="height:3%;background:var(--line)"></i>';const c=x>=90?'var(--bad)':x>=70?'var(--warn)':'var(--accent)';return '<i style="height:'+Math.max(3,x)+'%;background:'+c+'"></i>';}).join('')+'</span>';};
-  let h='<style>.spk{display:inline-flex;align-items:flex-end;gap:1px;height:24px;width:140px;vertical-align:middle}.spk i{flex:1;min-height:1px;border-radius:1px}.upt{display:inline-flex;gap:2px;flex-wrap:wrap;max-width:340px;vertical-align:middle}.upt .dot{margin:0}</style>';
-  h+='<h2 class="sec">服务器 · 内存/磁盘趋势</h2><div class="list">';
+  // 细折线趋势（SVG）：百分比按 0-100 绝对刻度，线色按最新值阈值。极简 mono，贴统一设计（列表优先、hairline）。
+  const sl=(vals)=>{const v=vals.slice(-60),n=v.length,W=120,H=22;if(!n)return '<svg class="sl" viewBox="0 0 120 22"></svg>';
+    const yOf=x=>H-Math.max(0,Math.min(100,x==null?0:x))/100*(H-2)-1;
+    const pts=n===1?['0,'+yOf(v[0]).toFixed(1),W+','+yOf(v[0]).toFixed(1)]:v.map((x,i)=>(i/(n-1)*W).toFixed(1)+','+yOf(x).toFixed(1));
+    const last=v[n-1],col=last==null?'var(--muted)':last>=90?'var(--bad)':last>=70?'var(--warn)':'var(--accent)';
+    return '<svg class="sl" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts.join(' ')+'" style="fill:none;stroke:'+col+';stroke-width:1.4px;stroke-linejoin:round;stroke-linecap:round"/></svg>';};
+  const pv=(x)=>x==null?'<span class="mval">—</span>':'<span class="mval" style="color:'+(x>=90?'var(--bad)':x>=70?'var(--warn)':'var(--content)')+'">'+x+'%</span>';
+  let h='<style>.sl{width:120px;height:22px;vertical-align:middle}.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:11px 2px;border-bottom:1px solid var(--line)}.mrow .nm{min-width:112px}.mlab{color:var(--muted);font-size:12px}.mval{font-variant-numeric:tabular-nums;font-size:12.5px;min-width:40px;text-align:right}.upt{display:inline-flex;gap:2px;flex-wrap:wrap}.upt .dot{margin:0}</style>';
+  h+='<div class="dsub" style="margin:2px 0 8px">开着操作台每 60s 自动采一次（也可 <code>vl monitor</code> 常驻），落 ~/.vibe-launch/metrics/。这里只看<b>时间趋势</b> —— 当前值 / 详情在总览、服务器页。</div>';
+  h+='<h2 class="sec">服务器 · 内存 / 磁盘趋势</h2>';
   for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
-    h+='<div class="row" style="cursor:default;flex-wrap:wrap;gap:8px 14px"><span class="nm">'+esc(n)+'</span>'
-      +'<span class="mt">CPU '+(l.load1!=null&&l.cores?Math.round(l.load1/l.cores*100)+'%':'—')+' · 内存 '+(l.memPct!=null?l.memPct+'%':'—')+' · 磁盘 '+(l.diskPct!=null?l.diskPct+'%':'—')+'</span><span class="sp"></span>'
-      +'<span class="mt" style="font-size:11px">内存</span>'+spark(a.map(x=>x.memPct))
-      +'<span class="mt" style="font-size:11px">磁盘</span>'+spark(a.map(x=>x.diskPct))+'</div>';
+    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="sp"></span>'
+      +'<span class="mlab">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
+      +'<span class="mlab" style="margin-left:8px">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)+'</div>';
   }
-  h+='</div><h2 class="sec">项目健康在线率（近 48 次采集）</h2><div class="list">';
-  for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-48);
+  h+='<h2 class="sec">项目健康在线率 · 近 60 次采集</h2>';
+  for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-60);
     const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
     const strip=a.map(x=>'<span class="dot '+(x.reachable===false||x.healthOk===false?'bad':'ok')+'"></span>').join('');
-    h+='<div class="row" style="cursor:default;flex-wrap:wrap;gap:6px 12px"><span class="nm">'+esc(n)+'</span><span class="mt">'+(rate!=null?rate+'% 在线':'—')+'</span><span class="sp"></span><span class="upt">'+strip+'</span></div>';
+    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span><span class="sp"></span><span class="upt">'+strip+'</span></div>';
   }
-  h+='</div>';
   $('view-monitor').innerHTML=h;
 }
 function rLog(){
