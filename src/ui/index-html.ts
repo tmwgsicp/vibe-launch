@@ -202,6 +202,9 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>容器名（逗号分隔）<input id="p_containers" placeholder="myapp-api,myapp-web"></label>
   <label>重启命令（非容器项目，如 systemd；配了容器可不填）<input id="p_restartcmd" placeholder="sudo systemctl restart my-svc"></label>
   <label>健康检查 URL（逗号分隔）<input id="p_health" placeholder="http://127.0.0.1:8000/health"></label>
+  <label>反代域名（可选，Caddy 自动 HTTPS；多个用空格）<input id="p_pxdomain" placeholder="app.example.com"></label>
+  <label>反代上游<input id="p_pxupstream" placeholder="127.0.0.1:8000"></label>
+  <div style="margin:2px 0 4px"><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="p_pxtls" checked>自动 HTTPS（关掉则只听 http）</label></div>
 </div><div class="df"><button onclick="projectDlg.close()">取消</button><button class="primary" id="p_go" onclick="submitProject()">登记</button></div></dialog>
 
 <dialog id="gitDlg"><div class="dh">转成 git 部署</div><div class="dsub">在服务器上把目录转成 git checkout：装 git、生成只读 deploy key、自动加到仓库、配好免密拉取。</div><div class="db">
@@ -392,6 +395,12 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
   d+='</div>';
   // 端口暴露检测
   d+='<div class="grp"><div class="glabel">数据库端口暴露</div><div class="acts"><button class="sm" onclick="event.stopPropagation();checkPorts(\''+esc(k)+'\')">检测公网可达</button></div><div class="mt" id="ports-'+esc(k)+'" style="margin-top:9px"></div></div>';
+  // 反代（Caddy）：装 + 接线，列出本机 vibe-launch 管理的站点块
+  d+='<div class="grp"><div class="glabel">反代（Caddy）</div><div class="acts">'
+    +'<button class="sm" onclick="event.stopPropagation();doProxySetup(\''+esc(k)+'\')">安装 / 接线 Caddy</button>'
+    +'<button class="sm" onclick="event.stopPropagation();loadProxySites(\''+esc(k)+'\')">查看站点</button></div>'
+    +'<div class="mt" style="margin-top:6px;color:var(--faint)">裸机 Caddy 独占 80/443；被 1Panel/nginx 占会告警。装好后到项目里「应用反代」</div>'
+    +'<div id="pxsrv-'+esc(k)+'" style="margin-top:8px"></div></div>';
   // 容器管理（列全部 + 删停止 + 一键清理）
   d+='<div class="grp"><div class="glabel">容器管理　<a class="link" onclick="event.stopPropagation();loadCts(\''+esc(k)+'\')">刷新</a></div>'
     +'<div class="acts"><button class="sm" onclick="event.stopPropagation();pruneCts(\''+esc(k)+'\')">清理停止容器</button></div>'
@@ -422,6 +431,7 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
   if(p.preDeploy&&p.preDeploy.length)cfg.push(['部署前钩子',p.preDeploy.join('  ;  ')]);
   if(p.postDeploy&&p.postDeploy.length)cfg.push(['部署后钩子',p.postDeploy.join('  ;  ')]);
   if(p.frontend&&p.frontend.target)cfg.push(['前端产物',(p.frontend.dist||'?')+' → '+p.frontend.target]);
+  if(p.proxy&&p.proxy.domain)cfg.push(['反代',p.proxy.domain+' → '+(p.proxy.upstream||'')+(p.proxy.tls===false?'（http）':'（https）')]);
   if(s&&s.gitRepo)cfg.push(['代码仓库',s.gitRepo]);
   cfg.push(['Git 接管',(s&&s.gitRepo)?('是 · '+(s.gitBranch||'')+(s.gitRev?' @ '+s.gitRev:'')):'否（点"转 git"接管后可自动拉代码）']);
   d+='<div class="grp"><div class="glabel">部署配置</div><div class="kv">'+cfg.map(x=>'<div><span class="kk">'+x[0]+'</span><span class="vv">'+esc(x[1])+'</span></div>').join('')+'</div></div>';
@@ -433,6 +443,12 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
     +'<button class="sm" onclick="event.stopPropagation();doStatus(\''+esc(k)+'\')">刷新状态</button>'
     +((s&&s.gitRepo)?'<button class="sm" onclick="event.stopPropagation();doRollbackPrev(\''+esc(k)+'\')">回滚上一版</button>':'')
     +'<button class="sm" onclick="event.stopPropagation();openGit(\''+esc(k)+'\')">转 git</button></div><div id="out-'+esc(k)+'"></div></div>';
+  // 反代（Caddy）：配了 proxy 段才显示
+  if(p.proxy&&p.proxy.domain){d+='<div class="grp"><div class="glabel">反代（Caddy）</div><div class="acts">'
+    +'<button class="sm" onclick="event.stopPropagation();doProxyApply(\''+esc(k)+'\')">应用 / 更新反代</button>'
+    +'<button class="sm" onclick="event.stopPropagation();doProxyRm(\''+esc(k)+'\')">下线反代</button></div>'
+    +'<div class="mt" style="margin-top:6px;color:var(--faint)">先在「服务器」页对该机 setup Caddy，再应用；首次访问自动签证书（需 DNS 指向本机 + 80/443 可达）</div>'
+    +'<div id="pxout-'+esc(k)+'"></div></div>';}
   // 健康
   if(s&&s.reachable&&s.health&&s.health.length)d+='<div class="grp"><div class="glabel">健康检查</div>'+s.health.map(h=>'<div class="hist"><span class="dot '+(h.ok?'ok':'bad')+'"></span>'+esc(h.url.replace(/^https?:\/\//,''))+' · '+h.httpCode+'</div>').join('')+'</div>';
   // 容器（日志/重启/停止/启动/详情）
@@ -469,6 +485,20 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
 function histHtml(k){const a=HIST[k];if(!a)return '<span class="mt">加载中…</span>';
   return a.length?a.map(r=>'<div class="hist"><span class="dot '+(r.success?'ok':'bad')+'"></span>'+(r.action==='rollback'?'↩ 回滚':'部署')+' · '+new Date(r.ts).toLocaleString()+(r.gitRev?' · '+esc(r.gitRev):'')+(r.error?' · '+esc(r.error).slice(0,28):'')+(r.gitRev?'　<a class="link" onclick="event.stopPropagation();doRollback(\''+esc(k)+'\',\''+esc(r.gitRev)+'\')">回滚到此</a>':'')+'</div>').join(''):'<span class="mt">还没有部署记录</span>';}
 async function loadHist(k){try{HIST[k]=await api('/api/history?project='+encodeURIComponent(k));}catch(e){if(!HIST[k])HIST[k]=[];}render();}
+async function doProxyApply(k){const out=$('pxout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 应用反代中…</pre>';
+  try{const r=await api('/api/proxy/apply/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+    if(out)out.innerHTML='<pre class="out">'+(r.success?'✓ '+esc(r.domain||'')+' 已上线':'✗ '+esc(r.error||'失败'))+'\n'+esc((r.steps||[]).join('\n'))+'</pre>';
+    toast(r.success?'反代已应用':('反代失败：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+async function doProxyRm(k){if(!confirm('下线 '+k+' 的反代？会删除站点块并 reload Caddy。'))return;
+  const out=$('pxout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 下线中…</pre>';
+  try{const r=await api('/api/proxy/rm/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(r.success?'已下线':('失败：'+(r.error||'?')),r.success?'':'err');}catch(e){toast(e.message,'err');}}
+async function doProxySetup(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 安装 / 接线 Caddy（可能要拉包，请稍等）…</pre>';
+  try{const r=await api('/api/proxy/setup/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n✗ '+esc(r.error):'')+'</pre>';toast(r.success?'Caddy 已就绪':('setup 失败：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+async function loadProxySites(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<span class="mt">加载中…</span>';
+  try{const a=await api('/api/proxy/ls?server='+encodeURIComponent(k));
+    if(out)out.innerHTML=a.length?a.map(s=>'<div class="code"><b>'+esc(s.project)+'</b>\n'+esc(s.content)+'</div>').join(''):'<span class="mt">（无 vibe-launch 管理的站点块）</span>';}catch(e){if(out)out.innerHTML='<span class="mt">'+esc(e.message)+'</span>';}}
 async function doRollback(k,rev){if(!confirm('把 '+k+' 回滚到 '+rev+'？\n会 git reset --hard 到该版本并重启容器（不跑部署命令）。'))return;
   const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 回滚中…</pre>';
   try{const r=await api('/api/rollback/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev})},0);
@@ -631,14 +661,16 @@ async function submitServer(){$('s_go').disabled=true;
 let EDITPROJ='',EDITSRV='';
 function fillSrvOpts(sel){$('p_server').innerHTML=Object.keys(CONFIG.servers||{}).map(k=>'<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>').join('');}
 function openProjectDlg(){EDITPROJ='';$('pdlg_title').textContent='登记部署项目';$('p_go').textContent='登记';
-  ['p_name','p_deploy','p_dir','p_containers','p_restartcmd','p_health'].forEach(id=>$(id).value='');fillSrvOpts();projectDlg.showModal();}
+  ['p_name','p_deploy','p_dir','p_containers','p_restartcmd','p_health','p_pxdomain','p_pxupstream'].forEach(id=>$(id).value='');$('p_pxtls').checked=true;fillSrvOpts();projectDlg.showModal();}
 function openPrjEdit(k){EDITPROJ=k;const p=CONFIG.projects[k];$('pdlg_title').textContent='编辑项目';$('p_go').textContent='保存';
-  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_containers').value=(p.containers||[]).join(',');$('p_restartcmd').value=p.restartCmd||'';$('p_health').value=(p.health||[]).join(',');fillSrvOpts(p.server);projectDlg.showModal();}
+  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_containers').value=(p.containers||[]).join(',');$('p_restartcmd').value=p.restartCmd||'';$('p_health').value=(p.health||[]).join(',');$('p_pxdomain').value=(p.proxy&&p.proxy.domain)||'';$('p_pxupstream').value=(p.proxy&&p.proxy.upstream)||'';$('p_pxtls').checked=!(p.proxy&&p.proxy.tls===false);fillSrvOpts(p.server);projectDlg.showModal();}
 async function submitProject(){$('p_go').disabled=true;
   try{const sp=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
     const name=$('p_name').value.trim(),server=$('p_server').value,deploy=$('p_deploy').value.trim();
     if(!name||!server||!deploy){toast('项目名/服务器/部署命令必填','err');return;}
-    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,restartCmd:$('p_restartcmd').value.trim()||undefined,health:$('p_health').value?sp($('p_health').value):undefined};
+    const pxd=$('p_pxdomain').value.trim();
+    const proxy=pxd?{domain:pxd,upstream:$('p_pxupstream').value.trim()||'127.0.0.1:8000',tls:$('p_pxtls').checked}:null;
+    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,restartCmd:$('p_restartcmd').value.trim()||undefined,health:$('p_health').value?sp($('p_health').value):undefined,proxy};
     if(EDITPROJ){await api('/api/project/'+encodeURIComponent(EDITPROJ),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({newName:name},body))});toast('已保存');}
     else{await api('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name},body))});toast('已登记');}
     if(EDITPROJ&&EDITPROJ!==name)EXP.delete('p:'+EDITPROJ);projectDlg.close();await refreshAll();

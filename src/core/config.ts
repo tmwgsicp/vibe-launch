@@ -127,6 +127,8 @@ export function updateProject(
   for (const k of ["dir", "restartCmd"] as const) {
     if (merged[k] === "" || merged[k] == null) delete (merged as Record<string, unknown>)[k];
   }
+  // proxy 传 null（UI 清空域名）或缺 domain 视为移除
+  if (merged.proxy == null || !merged.proxy.domain) delete (merged as Record<string, unknown>).proxy;
   const target = (newName || name).trim();
   if (target !== name) {
     if (config.projects[target]) throw new Error(`项目名 "${target}" 已被占用`);

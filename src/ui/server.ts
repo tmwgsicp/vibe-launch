@@ -19,6 +19,7 @@ import { runOnProject } from "../core/run.js";
 import { deployFrontend } from "../core/frontend.js";
 import { VERSION } from "../version.js";
 import { checkExposure } from "../core/portcheck.js";
+import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
 import { listContainers, removeContainer, pruneContainers, startContainer, stopContainer, inspectContainer } from "../core/containers.js";
 import { fsList, fsRead, fsDownload, fsWriteB64, fsDelete, fsRename, fsMkdir } from "../core/fileops.js";
@@ -396,7 +397,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         const b = await readBody(req);
         const c = loadConfig();
         updateProject(c, name, {
-          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, restartCmd: b.restartCmd, health: b.health,
+          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, restartCmd: b.restartCmd, health: b.health, proxy: b.proxy,
         }, b.newName);
         return json(res, 200, { ok: true, path: saveConfig(c) });
       }
@@ -418,9 +419,28 @@ export async function startUi(port = 7777, open = true): Promise<void> {
           containers: b.containers,
           restartCmd: b.restartCmd,
           health: b.health,
+          proxy: b.proxy || undefined,
         });
         const p = saveConfig(c);
         return json(res, 200, { ok: true, path: p });
+      }
+      // 反代（Caddy）：装/接线 / 应用站点 / 下线 / 列站点
+      if (path.startsWith("/api/proxy/setup/") && req.method === "POST") {
+        const server = decodeURIComponent(path.slice("/api/proxy/setup/".length));
+        return json(res, 200, await setupProxy(loadConfig(), server));
+      }
+      if (path.startsWith("/api/proxy/apply/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/proxy/apply/".length));
+        return json(res, 200, await applyProxy(loadConfig(), name));
+      }
+      if (path.startsWith("/api/proxy/rm/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/proxy/rm/".length));
+        return json(res, 200, await removeProxy(loadConfig(), name));
+      }
+      if (path === "/api/proxy/ls" && req.method === "GET") {
+        const c = loadConfig(), sv = q.get("server");
+        if (!sv || !c.servers[sv]) return json(res, 404, { error: "server not found" });
+        return json(res, 200, await listProxy(c, sv));
       }
       // 转 git checkout
       if (path.startsWith("/api/setup-git/") && req.method === "POST") {
