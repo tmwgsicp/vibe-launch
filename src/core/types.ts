@@ -23,6 +23,12 @@ export interface ProjectConfig {
   health?: string[];
   /** 涉及的容器名，用于 status 看 docker ps */
   containers?: string[];
+  /**
+   * 非容器项目（systemd / 裸进程 / venv）的重启命令，在 dir 内跑，如 "sudo systemctl restart ir-worker ir-worker-api"。
+   * 没配 containers 时，restart / env set --restart / rollback 会走它来重启，让 systemd 项目不再是二等公民。
+   * 配了 containers 则以 containers 为准（docker restart），此字段忽略。
+   */
+  restartCmd?: string;
   /** 部署命令超时（秒）。含构建（npm install / vitepress build / docker build）的部署会久，默认 600s。 */
   deployTimeout?: number;
   /** 部署前钩子（deploy 命令前跑，在 dir 内，逐条串行）：DB 迁移 / 备份 / 建索引。任一失败即中止，不部署。 */

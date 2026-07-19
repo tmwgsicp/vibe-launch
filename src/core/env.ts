@@ -5,6 +5,7 @@ import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 
 import { shQuote as q } from "./sh.js";
+import { reloadServices } from "./reload.js";
 const validKey = (k: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
 
 export interface EnvSetResult {
@@ -15,6 +16,8 @@ export interface EnvSetResult {
   backup?: string;
   restarted?: { container: string; ok: boolean }[];
   health?: { url: string; httpCode: string; ok: boolean }[];
+  /** 请求了 --restart 但项目没配 containers/restartCmd：.env 写了但没能重启生效，如实告警而非假成功。 */
+  warning?: string;
   success: boolean;
   error?: string;
 }
@@ -73,17 +76,18 @@ export async function setEnv(
     if (!w.stdout.includes("__OK__")) throw new Error(`写入失败：${(w.stderr || w.stdout).trim()}`);
     if (existed) res.backup = backup;
 
-    // 可选重启 + 健康检查（让新 env 生效）
+    // 可选重启 + 健康检查（让新 env 生效）。容器→docker restart，systemd→restartCmd，都没配→告警不假成功。
     if (opts.restart) {
-      res.restarted = [];
-      for (const name of project.containers ?? []) {
-        const r = await runOnServer(server, `docker restart ${q(name)}`);
-        res.restarted.push({ container: name, ok: r.code === 0 });
-      }
-      res.health = [];
-      for (const url of project.health ?? []) {
-        const code = await waitHealthy(server, url);
-        res.health.push({ url, httpCode: code, ok: /^2\d\d$/.test(code) });
+      const reload = await reloadServices(server, project);
+      if (reload.noTarget) {
+        res.warning = ".env 已写入，但项目没配 containers/restartCmd，无法自动重启 —— 新值尚未生效。请手动重启或配 restartCmd。";
+      } else {
+        res.restarted = reload.actions.map((a) => ({ container: a.target, ok: a.ok }));
+        res.health = [];
+        for (const url of project.health ?? []) {
+          const code = await waitHealthy(server, url);
+          res.health.push({ url, httpCode: code, ok: /^2\d\d$/.test(code) });
+        }
       }
     }
     res.success = true;

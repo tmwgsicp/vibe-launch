@@ -6,6 +6,7 @@ import { runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
 
 import { shQuote as q } from "./sh.js";
+import { reloadServices } from "./reload.js";
 // 只接受短/长 commit hash 或 HEAD~N，挡命令注入
 const validRev = (rev: string) => /^[0-9a-fA-F]{4,40}$/.test(rev) || /^HEAD~\d+$/.test(rev);
 
@@ -32,7 +33,11 @@ export async function rollback(
     if (!resolved || resolved === "__BAD__") throw new Error(`目标版本 ${target} 解析失败（不存在？）`);
     if (opts.dryRun) {
       result.gitRev = resolved;
-      const cts = (project.containers ?? []).join(", ") || "（无容器）";
+      const cts = (project.containers ?? []).length
+        ? (project.containers as string[]).join(", ")
+        : project.restartCmd
+          ? `restartCmd: ${project.restartCmd}`
+          : "（无 containers/restartCmd，不会自动重启）";
       result.output = `dry-run：将回滚 ${from} → ${resolved}（${target}），git reset --hard 后重启 ${cts}。未执行。`;
       result.success = true;
       return result;
@@ -46,10 +51,12 @@ export async function rollback(
     result.gitRev = to;
     let log = `回滚 ${from} → ${to}\n${reset.stdout.trim()}`;
 
-    // 重启相关容器（让新代码生效）
-    for (const name of project.containers ?? []) {
-      const r = await runOnServer(server, `docker restart ${q(name)}`);
-      log += `\nrestart ${name}: ${r.code === 0 ? "ok" : (r.stderr || r.stdout).trim()}`;
+    // 重启服务让回滚后的代码生效（容器→docker restart，systemd→restartCmd）
+    const reload = await reloadServices(server, project);
+    if (reload.noTarget) {
+      log += `\n⚠ 代码已回滚，但项目没配 containers/restartCmd，服务未自动重启 —— 旧代码可能仍在跑。请手动重启或配 restartCmd。`;
+    } else {
+      for (const a of reload.actions) log += `\nrestart ${a.target}: ${a.ok ? "ok" : a.output}`;
     }
     result.output = log;
 

@@ -30,6 +30,15 @@ projects:
   #   dir: /path/to/foo
   #   deploy: docker compose pull && docker compose up -d
 
+  # 非容器项目（systemd / 裸进程 / venv，没有容器）：用 restartCmd 声明"怎么重启我"。
+  # 这样 restart / env set --restart / rollback 都能真正重启它 —— 不再因为没 containers 而"假成功"。
+  # worker:
+  #   server: myserver
+  #   dir: /opt/worker
+  #   deploy: git pull && sudo systemctl restart my-worker my-worker-api
+  #   restartCmd: sudo systemctl restart my-worker my-worker-api
+  #   # containers 留空即可；restartCmd 就是它的"重启单元"
+
   # ── 进阶：复杂运维编排（都是可选项，按需加）──
   # fullstack:
   #   server: myserver

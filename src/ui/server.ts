@@ -391,7 +391,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         const b = await readBody(req);
         const c = loadConfig();
         updateProject(c, name, {
-          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, health: b.health,
+          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, restartCmd: b.restartCmd, health: b.health,
         }, b.newName);
         return json(res, 200, { ok: true, path: saveConfig(c) });
       }
@@ -411,6 +411,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
           dir: b.dir,
           deploy: b.deploy,
           containers: b.containers,
+          restartCmd: b.restartCmd,
           health: b.health,
         });
         const p = saveConfig(c);

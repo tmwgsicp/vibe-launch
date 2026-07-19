@@ -204,6 +204,7 @@ program
     console.log(`✅ 已更新 ${r.file}`);
     for (const c of r.changed) console.log(`  ${c.action === "add" ? "+" : "~"} ${c.key}`);
     if (r.backup) console.log(`  备份：${r.backup}`);
+    if (r.warning) console.log(`  ⚠ ${r.warning}`);
     for (const c of r.restarted ?? []) console.log(`  restart ${c.container}: ${c.ok ? "✓" : "✗"}`);
     for (const h of r.health ?? []) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
   });
@@ -265,6 +266,7 @@ projectCmd
   .option("--dir <dir>", "服务器上的工作目录")
   .option("--containers <list>", "容器名，逗号分隔")
   .option("--health <list>", "健康检查 URL，逗号分隔")
+  .option("--restart-cmd <cmd>", "非容器项目(systemd/裸进程)的重启命令，如 'sudo systemctl restart my-svc'")
   .action((name: string, opts) => {
     const c = loadConfig();
     const split = (s?: string) => (s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined);
@@ -274,6 +276,7 @@ projectCmd
       deploy: opts.deploy,
       containers: split(opts.containers),
       health: split(opts.health),
+      restartCmd: opts.restartCmd,
     });
     const path = saveConfig(c);
     console.log(`✅ 项目 ${name} 已登记 → ${opts.server}（写入 ${path}）`);

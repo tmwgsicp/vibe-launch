@@ -192,6 +192,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>部署命令<input id="p_deploy" placeholder="git pull && docker restart myapp-api"></label>
   <label>工作目录（部署前 cd 进来）<span style="display:flex;gap:8px"><input id="p_dir" placeholder="/path/to/app" style="flex:1"><button type="button" class="sm" onclick="openBrowse()">浏览</button></span></label>
   <label>容器名（逗号分隔）<input id="p_containers" placeholder="myapp-api,myapp-web"></label>
+  <label>重启命令（非容器项目，如 systemd；配了容器可不填）<input id="p_restartcmd" placeholder="sudo systemctl restart my-svc"></label>
   <label>健康检查 URL（逗号分隔）<input id="p_health" placeholder="http://127.0.0.1:8000/health"></label>
 </div><div class="df"><button onclick="projectDlg.close()">取消</button><button class="primary" id="p_go" onclick="submitProject()">登记</button></div></dialog>
 
@@ -616,14 +617,14 @@ async function submitServer(){$('s_go').disabled=true;
 let EDITPROJ='',EDITSRV='';
 function fillSrvOpts(sel){$('p_server').innerHTML=Object.keys(CONFIG.servers||{}).map(k=>'<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>').join('');}
 function openProjectDlg(){EDITPROJ='';$('pdlg_title').textContent='登记部署项目';$('p_go').textContent='登记';
-  ['p_name','p_deploy','p_dir','p_containers','p_health'].forEach(id=>$(id).value='');fillSrvOpts();projectDlg.showModal();}
+  ['p_name','p_deploy','p_dir','p_containers','p_restartcmd','p_health'].forEach(id=>$(id).value='');fillSrvOpts();projectDlg.showModal();}
 function openPrjEdit(k){EDITPROJ=k;const p=CONFIG.projects[k];$('pdlg_title').textContent='编辑项目';$('p_go').textContent='保存';
-  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_containers').value=(p.containers||[]).join(',');$('p_health').value=(p.health||[]).join(',');fillSrvOpts(p.server);projectDlg.showModal();}
+  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_containers').value=(p.containers||[]).join(',');$('p_restartcmd').value=p.restartCmd||'';$('p_health').value=(p.health||[]).join(',');fillSrvOpts(p.server);projectDlg.showModal();}
 async function submitProject(){$('p_go').disabled=true;
   try{const sp=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
     const name=$('p_name').value.trim(),server=$('p_server').value,deploy=$('p_deploy').value.trim();
     if(!name||!server||!deploy){toast('项目名/服务器/部署命令必填','err');return;}
-    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,health:$('p_health').value?sp($('p_health').value):undefined};
+    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,restartCmd:$('p_restartcmd').value.trim()||undefined,health:$('p_health').value?sp($('p_health').value):undefined};
     if(EDITPROJ){await api('/api/project/'+encodeURIComponent(EDITPROJ),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({newName:name},body))});toast('已保存');}
     else{await api('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name},body))});toast('已登记');}
     if(EDITPROJ&&EDITPROJ!==name)EXP.delete('p:'+EDITPROJ);projectDlg.close();await refreshAll();

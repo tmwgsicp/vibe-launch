@@ -3,8 +3,8 @@
 // 用途：容器假死、改了 .env / 配置要重新加载、deploy 后想单独重启某项目。
 import type { Config } from "./types.js";
 import { getProject } from "./config.js";
-import { runOnServer, waitHealthy } from "./ssh.js";
-import { shQuote as q } from "./sh.js";
+import { waitHealthy } from "./ssh.js";
+import { reloadServices } from "./reload.js";
 
 export interface RestartResult {
   project: string;
@@ -30,30 +30,29 @@ export async function restart(
   };
 
   const all = project.containers ?? [];
-  if (!all.length) {
-    result.error = "项目未配置容器（containers），无可重启对象";
-    return result;
-  }
 
-  // 选择性重启：只重指定容器（poller 改动只重 worker、不打断 api 用户）。校验都在项目里，避免手滑重错。
-  let containers = all;
+  // 选择性重启（--only）只对容器项目有意义：restartCmd 是不透明整条命令，无法从中只重子集。
   if (opts.only?.length) {
+    if (!all.length) {
+      result.error = "本项目无容器（systemd/裸进程），--only 不适用；要精确重启单个服务用 vl run（如 systemctl restart xxx）";
+      return result;
+    }
     const unknown = opts.only.filter((c) => !all.includes(c));
     if (unknown.length) {
       result.error = `--only 指定的容器不在项目配置里：${unknown.join(", ")}（可选：${all.join(", ")}）`;
       return result;
     }
-    containers = opts.only;
   }
 
   try {
-    // 多容器并行重启（互相独立；连接池在 MCP/UI 下复用连接，CLI 下各自短连接）
-    result.restarted = await Promise.all(
-      containers.map(async (name) => {
-        const r = await runOnServer(server, `docker restart ${q(name)}`);
-        return { container: name, ok: r.code === 0, output: (r.stdout || r.stderr || "").trim() };
-      })
-    );
+    // 容器 → docker restart；非容器 → restartCmd（systemd 等）。都没配则 noTarget，如实报错不假成功。
+    const reload = await reloadServices(server, project, opts.only);
+    if (reload.noTarget) {
+      result.error =
+        "项目既没配 containers 也没配 restartCmd，无可重启对象。systemd/裸进程项目请在配置里加 restartCmd，如 'sudo systemctl restart your-svc'";
+      return result;
+    }
+    result.restarted = reload.actions.map((a) => ({ container: a.target, ok: a.ok, output: a.output }));
     const allRestarted = result.restarted.every((x) => x.ok);
 
     // 健康检查并行（同 deploy：2xx 才算通过）
