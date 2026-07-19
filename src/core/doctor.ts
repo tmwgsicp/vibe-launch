@@ -56,35 +56,38 @@ export async function doctor(config: Config, target: string): Promise<DoctorResu
   const res: DoctorResult = { server: target, reachable: false, docker: "none", curl: false, dns: [], currentMirrors: [], probes: [] };
   try {
     // 每个探测捕获 curl 退出码($?) + 首行错误，别再 2>/dev/null 吞掉真实原因
+    // 并行探测（各自后台跑 + wait），墙钟≈单个探测(≤10s)，而非 5 个串行相加(可到 50s+)。
+    // 每个探测用独立临时文件存 curl 报错，避免竞争。
     const probeLines = PROBES.map(
-      (p) =>
-        `out=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --connect-timeout 8 --max-time 15 ${shQuote(p.url)} 2>/tmp/vle); rc=$?; ` +
-        `err=$(tr -d '\\r\\n' </tmp/vle 2>/dev/null | head -c 120); printf 'P|%s|%s|%s|%s\\n' ${shQuote(p.name)} "$out" "$rc" "$err"`
+      (p, i) =>
+        `( out=$(curl -sS -o /dev/null -w '%{http_code} %{time_total}' --connect-timeout 6 --max-time 10 ${shQuote(p.url)} 2>/tmp/vle${i}); rc=$?; ` +
+        `err=$(tr -d '\\r\\n' </tmp/vle${i} 2>/dev/null | head -c 120); rm -f /tmp/vle${i}; ` +
+        `printf 'P|%s|%s|%s|%s\\n' ${shQuote(p.name)} "$out" "$rc" "$err" ) &`
     ).join("\n");
     const cmd =
-      `if command -v curl >/dev/null 2>&1; then printf 'CURL|yes\\n';\n${probeLines}\nelse printf 'CURL|no\\n'; fi; ` +
+      `if command -v curl >/dev/null 2>&1; then printf 'CURL|yes\\n';\n${probeLines}\nwait\nelse printf 'CURL|no\\n'; fi; ` +
       `printf 'DNS|%s\\n' "$(grep -h '^nameserver' /etc/resolv.conf 2>/dev/null | awk '{print $2}' | tr '\\n' ' ')"; ` +
       `printf 'DOCKER|%s\\n' "$(command -v docker >/dev/null 2>&1 && docker --version 2>/dev/null || echo none)"; ` +
       `printf 'DAEMON|%s\\n' "$(base64 </etc/docker/daemon.json 2>/dev/null | tr -d '\\n')"`;
-    const out = (await runOnServer(server, cmd)).stdout;
+    const out = (await runOnServer(server, cmd, undefined, 30000)).stdout; // 30s 足够并行探测(≤10s)+ 余量
     res.reachable = true;
-    let pi = 0;
     for (const line of out.split("\n")) {
       if (line.startsWith("P|")) {
         const parts = line.split("|"); // P | name | "code time" | rc | err…
+        const name = parts[1] || "?";
+        const known = PROBES.find((x) => x.name === name); // 并行输出按完成顺序到达，必须按名字配 url，别按位置
         const [code = "000", t = "0"] = (parts[2] || "").trim().split(/\s+/);
         const rc = parseInt(parts[3] || "0", 10) || 0;
         const err = parts.slice(4).join("|");
         const ok = /^\d{3}$/.test(code) && code !== "000"; // 拿到任何 HTTP 响应即可达（401 也算，如 Docker Hub）
         res.probes.push({
-          name: parts[1] || PROBES[pi]?.name || "?",
-          url: PROBES[pi]?.url || "",
+          name,
+          url: known?.url || "",
           code,
           timeMs: Math.round(parseFloat(t) * 1000) || 0,
           ok,
           reason: ok ? undefined : curlReason(rc, code, err),
         });
-        pi++;
       } else if (line.startsWith("CURL|")) {
         res.curl = line.slice(5).trim() === "yes";
       } else if (line.startsWith("DNS|")) {
@@ -101,6 +104,8 @@ export async function doctor(config: Config, target: string): Promise<DoctorResu
         }
       }
     }
+    // 并行完成顺序不定 → 按定义顺序排稳，输出稳定
+    res.probes.sort((a, b) => PROBES.findIndex((p) => p.name === a.name) - PROBES.findIndex((p) => p.name === b.name));
     // curl 没装：doctor 探不了，明确告知（而不是一排 000 让人误判成没网）
     if (!res.curl && !res.probes.length) {
       for (const p of PROBES) res.probes.push({ name: p.name, url: p.url, code: "—", timeMs: 0, ok: false, reason: "服务器没装 curl，doctor 无法探测（vl run <项目> \"安装 curl\"）" });
