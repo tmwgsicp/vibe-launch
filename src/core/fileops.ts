@@ -5,7 +5,7 @@ import { runOnServer } from "./ssh.js";
 import { getServerOf } from "./config.js";
 import type { Config } from "./types.js";
 
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 
 /** 绝对路径基础校验：必须以 / 开头，无换行/空字节，无 .. 段（防意外跳目录）。 */
 function safeAbs(p: string): string {

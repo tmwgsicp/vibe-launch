@@ -2,6 +2,8 @@
 // 服务内嵌的单页前端。纯本地、无账号、只监听 127.0.0.1。
 import * as http from "node:http";
 import { execFile } from "node:child_process";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { shQuote } from "../core/sh.js";
 import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject } from "../core/config.js";
 import { deploy } from "../core/deploy.js";
 import { status } from "../core/status.js";
@@ -24,6 +26,9 @@ import { INDEX_HTML } from "./index-html.js";
 
 // UI 进程内管理的活跃隧道（id -> 句柄）
 const TUNNELS = new Map<string, TunnelHandle>();
+
+/** 容器名白名单校验（HTTP 入参直拼 docker 命令前必须过这关，杜绝注入）。 */
+const validCt = (n: unknown): n is string => typeof n === "string" && /^[A-Za-z0-9_.-]+$/.test(n);
 
 function json(res: http.ServerResponse, code: number, obj: unknown): void {
   res.writeHead(code, { "Content-Type": "application/json; charset=utf-8" });
@@ -49,14 +54,47 @@ function tryOpen(url: string): void {
 
 export async function startUi(port = 7777, open = true): Promise<void> {
   enableSshPool(); // 长驻进程：复用 SSH 连接，翻目录/刷状态近即时
+
+  // ── 本地操作台的安全底座 ──
+  // 威胁模型（即便只监听 127.0.0.1 也真实存在）：① 你浏览器里打开的任意恶意网页可向
+  // localhost:7777 发跨站请求，而 /api/run 等于在你 5 台生产机上执行任意命令 → 打穿整队；
+  // ② DNS rebinding 把攻击者域名解析到 127.0.0.1 绕过同源。故：
+  //   · token —— 启动时随机生成，注入页面；每个 /api/* 都要带（恶意站点读不到页面就拿不到 token）
+  //   · Host 白名单 —— 只认 localhost/127.0.0.1，挡 DNS rebinding
+  //   · Origin 白名单 —— 有 Origin 头时必须同源，挡 CSRF
+  const TOKEN = randomBytes(24).toString("base64url");
+  const allowedHosts = new Set([`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`]);
+  const tokenOk = (given: unknown): boolean => {
+    const a = Buffer.from(String(given ?? ""));
+    const b = Buffer.from(TOKEN);
+    return a.length === b.length && timingSafeEqual(a, b);
+  };
+
   const server = http.createServer(async (req, res) => {
     const path = new URL(req.url || "/", `http://localhost:${port}`).pathname;
     const q = new URL(req.url || "/", `http://localhost:${port}`).searchParams;
     try {
-      // 静态首页
+      // DNS-rebinding 防护：任意非本机 Host（含解析到 127.0.0.1 的攻击者域名）一律拒
+      if (!allowedHosts.has((req.headers.host || "").toLowerCase())) {
+        res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("forbidden host");
+        return;
+      }
+      // /api/* 一律校验访问令牌 + 同源，挡恶意网页 CSRF / 未授权本地进程
+      if (path.startsWith("/api/")) {
+        const given = req.headers["x-vl-token"] ?? q.get("token") ?? ""; // header 常规，query 供 SSE/EventSource
+        if (!tokenOk(given)) return json(res, 401, { error: "无效或缺失的访问令牌（请从操作台页面发起请求）" });
+        const origin = req.headers.origin;
+        if (origin) {
+          let oh = "";
+          try { oh = new URL(origin).host.toLowerCase(); } catch { /* 非法 origin，按拒绝处理 */ }
+          if (!allowedHosts.has(oh)) return json(res, 403, { error: "跨站请求被拒绝" });
+        }
+      }
+      // 静态首页（把 token 注入页面，让同源 JS 能读到；恶意跨站页面因同源策略读不到本响应体）
       if (path === "/" || path === "/index.html") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(INDEX_HTML);
+        res.end(INDEX_HTML.replace("%%VL_TOKEN%%", TOKEN));
         return;
       }
       // 清单
@@ -185,15 +223,15 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       if (path === "/api/container-logs" && req.method === "GET") {
         const c = loadConfig();
         const sv = q.get("server"), ct = q.get("container"), tail = parseInt(q.get("tail") || "120", 10) || 120;
-        if (!sv || !c.servers[sv] || !ct) return json(res, 400, { error: "需要 server + container" });
-        const r = await runOnServer(c.servers[sv], `docker logs --tail ${tail} --timestamps ${JSON.stringify(ct)} 2>&1 | tail -2000`);
+        if (!sv || !c.servers[sv] || !validCt(ct)) return json(res, 400, { error: "需要 server + 合法容器名" });
+        const r = await runOnServer(c.servers[sv], `docker logs --tail ${tail} --timestamps ${shQuote(ct)} 2>&1 | tail -2000`);
         return json(res, 200, { logs: r.stdout || r.stderr || "(无输出)" });
       }
       // 容器日志：实时流（SSE，docker logs -f 经 SSH exec 推送）
       if (path === "/api/container-logs/stream" && req.method === "GET") {
         const c = loadConfig();
         const sv = q.get("server"), ct = q.get("container"), tail = parseInt(q.get("tail") || "200", 10) || 200;
-        if (!sv || !c.servers[sv] || !ct) return json(res, 400, { error: "需要 server + container" });
+        if (!sv || !c.servers[sv] || !validCt(ct)) return json(res, 400, { error: "需要 server + 合法容器名" });
         res.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
           "Cache-Control": "no-cache",
@@ -209,7 +247,7 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         let cleaned = false;
         const cleanup = () => { if (cleaned) return; cleaned = true; try { ssh.dispose(); } catch { /* ignore */ } };
         conn.exec(
-          `docker logs -f --tail ${tail} --timestamps ${JSON.stringify(ct)} 2>&1`,
+          `docker logs -f --tail ${tail} --timestamps ${shQuote(ct)} 2>&1`,
           (err: Error | undefined, stream: any) => {
             if (err) { res.write(`data: [错误] ${err.message}\n\n`); res.end(); cleanup(); return; }
             stream.on("data", send);
@@ -223,8 +261,8 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 容器重启
       if (path === "/api/container-restart" && req.method === "POST") {
         const b = await readBody(req), c = loadConfig();
-        if (!b.server || !c.servers[b.server] || !b.container) return json(res, 400, { error: "需要 server + container" });
-        const r = await runOnServer(c.servers[b.server], `docker restart ${JSON.stringify(b.container)}`);
+        if (!b.server || !c.servers[b.server] || !validCt(b.container)) return json(res, 400, { error: "需要 server + 合法容器名" });
+        const r = await runOnServer(c.servers[b.server], `docker restart ${shQuote(b.container)}`);
         return json(res, r.code === 0 ? 200 : 500, { ok: r.code === 0, output: (r.stdout || r.stderr).trim() });
       }
       // 容器列表（含已停止）

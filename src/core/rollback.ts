@@ -5,7 +5,7 @@ import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
 
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 // 只接受短/长 commit hash 或 HEAD~N，挡命令注入
 const validRev = (rev: string) => /^[0-9a-fA-F]{4,40}$/.test(rev) || /^HEAD~\d+$/.test(rev);
 

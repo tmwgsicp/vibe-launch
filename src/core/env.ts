@@ -4,7 +4,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 const validKey = (k: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
 
 export interface EnvSetResult {

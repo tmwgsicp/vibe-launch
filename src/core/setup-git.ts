@@ -11,7 +11,11 @@ import { getProject } from "./config.js";
 import { runOnServer } from "./ssh.js";
 import { getStoredToken } from "./github-auth.js";
 
-const q = (s: string) => JSON.stringify(s); // 简易 shell 引用（与 deploy.ts 一致）
+import { shQuote as q } from "./sh.js"; // POSIX 单引号转义（防注入，见 sh.ts）
+
+// 分支名有多处以裸子串形式拼进 git refspec（refs/heads/<branch>、branch.<branch>.remote），
+// 无法靠单引号包裹，故用白名单强校验：只允许 git 合法分支字符，杜绝命令注入。
+const validBranch = (b: string) => /^[A-Za-z0-9._/-]+$/.test(b) && !b.includes("..");
 
 export interface SetupGitOptions {
   project: string;
@@ -131,6 +135,7 @@ async function registerDeployKey(
 
 export async function setupGit(config: Config, opts: SetupGitOptions): Promise<SetupGitResult> {
   const branch = opts.branch || "main";
+  if (!validBranch(branch)) throw new Error(`非法分支名：${branch}（只允许字母数字和 . _ / -）`);
   const { project, server, serverName } = getProject(config, opts.project);
   const steps: string[] = [];
   const result: SetupGitResult = { project: opts.project, server: serverName, success: false, steps };

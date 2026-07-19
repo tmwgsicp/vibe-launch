@@ -3,6 +3,7 @@ import type { Config, DeployResult } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
+import { shQuote as q } from "./sh.js";
 
 function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n…(已截断 ${s.length - n} 字)` : s;
@@ -12,8 +13,8 @@ function truncate(s: string, n = 4000): string {
 async function gatherDiag(server: import("./types.js").ServerConfig, containers: string[]) {
   const out: { container: string; state?: string; logs: string }[] = [];
   for (const name of containers) {
-    const st = await runOnServer(server, `docker inspect -f '{{.State.Status}} (exit {{.State.ExitCode}})' ${JSON.stringify(name)} 2>/dev/null || echo "未找到该容器"`);
-    const lg = await runOnServer(server, `docker logs --tail 40 --timestamps ${JSON.stringify(name)} 2>&1 | tail -40`);
+    const st = await runOnServer(server, `docker inspect -f '{{.State.Status}} (exit {{.State.ExitCode}})' ${q(name)} 2>/dev/null || echo "未找到该容器"`);
+    const lg = await runOnServer(server, `docker logs --tail 40 --timestamps ${q(name)} 2>&1 | tail -40`);
     out.push({ container: name, state: st.stdout.trim(), logs: (lg.stdout || lg.stderr || "").trim() });
   }
   return out;
@@ -34,7 +35,7 @@ export async function deploy(config: Config, projectName: string, opts: DeployOp
     health: [],
   };
   const dir = project.dir;
-  const wrap = (c: string) => (dir ? `cd ${JSON.stringify(dir)} && ${c}` : c);
+  const wrap = (c: string) => (dir ? `cd ${q(dir)} && ${c}` : c);
   const timeout = (project.deployTimeout ?? 600) * 1000;
 
   // dry-run：把 preDeploy → deploy → postDeploy 的编排计划打出来，不动服务器。带迁移/建索引的部署先看清楚。
@@ -72,7 +73,7 @@ export async function deploy(config: Config, projectName: string, opts: DeployOp
 
     // 2. 记录 git 版本（如果是 git 目录）
     if (dir) {
-      const rev = await runOnServer(server, `git -C ${JSON.stringify(dir)} rev-parse --short HEAD 2>/dev/null || true`);
+      const rev = await runOnServer(server, `cd ${q(dir)} && git rev-parse --short HEAD 2>/dev/null || true`);
       result.gitRev = rev.stdout.trim() || undefined;
     }
 
@@ -105,7 +106,7 @@ export async function deploy(config: Config, projectName: string, opts: DeployOp
       // 健康过了也扫一眼日志：健康端点 200 ≠ 应用没坏（如某些页面模板 500、连接异常）
       const warns: { container: string; sample: string }[] = [];
       for (const name of project.containers) {
-        const r = await runOnServer(server, `docker logs --tail 40 ${JSON.stringify(name)} 2>&1 | grep -iE 'traceback|exception|critical|gaierror|errno|raise [A-Z]' | tail -3`);
+        const r = await runOnServer(server, `docker logs --tail 40 ${q(name)} 2>&1 | grep -iE 'traceback|exception|critical|gaierror|errno|raise [A-Z]' | tail -3`);
         const hit = (r.stdout || "").trim();
         if (hit) warns.push({ container: name, sample: hit.slice(0, 600) });
       }

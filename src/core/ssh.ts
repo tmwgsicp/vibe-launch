@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ServerConfig } from "./types.js";
+import { shQuote } from "./sh.js";
 
 function expandHome(p: string): string {
   return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
@@ -198,7 +199,7 @@ export async function waitHealthy(
 
 /** 在服务器本地探一个健康检查 URL，返回 http_code（curl 优先，没装则退回 wget）。 */
 export async function curlOnServer(server: ServerConfig, url: string): Promise<string> {
-  const u = JSON.stringify(url);
+  const u = shQuote(url);
   // curl 能直接给状态码；wget 只给成功/失败，故 2xx→200、其余→000
   const cmd =
     `if command -v curl >/dev/null 2>&1; then curl -fsS -o /dev/null -w '%{http_code}' --max-time 10 ${u} || echo 000; ` +

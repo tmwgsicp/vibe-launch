@@ -4,7 +4,7 @@ import { runOnServer } from "./ssh.js";
 import { getServerOf } from "./config.js";
 import type { Config } from "./types.js";
 
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 
 export interface ContainerInfo {
   name: string;

@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { loadConfig, saveConfig, MANAGED_KEY_REF } from "./config.js";
 import type { Config, ServerConfig } from "./types.js";
+import { shQuote } from "./sh.js";
 
 function expandHome(p: string): string {
   return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
@@ -101,7 +102,7 @@ export async function onboard(opts: OnboardOptions): Promise<OnboardResult> {
       const S = sudo ? "sudo " : "";
       const script =
         `${S}mkdir -p ${home}/.ssh && ` +
-        `echo ${JSON.stringify(pubkey)} | ${S}tee -a ${home}/.ssh/authorized_keys >/dev/null && ` +
+        `echo ${shQuote(pubkey)} | ${S}tee -a ${home}/.ssh/authorized_keys >/dev/null && ` +
         `${S}chmod 700 ${home}/.ssh && ${S}chmod 600 ${home}/.ssh/authorized_keys` +
         (sudo ? ` && sudo chown -R ${user}:${user} ${home}/.ssh` : "");
       const r = await ssh.execCommand(script);

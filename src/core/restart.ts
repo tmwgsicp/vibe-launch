@@ -4,6 +4,7 @@
 import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
+import { shQuote as q } from "./sh.js";
 
 export interface RestartResult {
   project: string;
@@ -49,7 +50,7 @@ export async function restart(
     // 多容器并行重启（互相独立；连接池在 MCP/UI 下复用连接，CLI 下各自短连接）
     result.restarted = await Promise.all(
       containers.map(async (name) => {
-        const r = await runOnServer(server, `docker restart ${JSON.stringify(name)}`);
+        const r = await runOnServer(server, `docker restart ${q(name)}`);
         return { container: name, ok: r.code === 0, output: (r.stdout || r.stderr || "").trim() };
       })
     );

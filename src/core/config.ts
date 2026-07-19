@@ -1,5 +1,5 @@
 // 加载 / 校验 YAML 配置
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { parse, stringify } from "yaml";
@@ -63,7 +63,10 @@ export function getConfigPath(): string {
 export function saveConfig(config: Config): string {
   const path = getConfigPath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, stringify(config), "utf8");
+  // 配置里可能含明文服务器密码，落盘即锁成「仅属主可读写」(0600)，避免同机其它用户读到。
+  writeFileSync(path, stringify(config), { mode: 0o600 });
+  // writeFileSync 的 mode 仅在新建文件时生效；已存在的旧文件补一次 chmod 收紧权限。
+  try { chmodSync(path, 0o600); } catch { /* Windows 无 POSIX 权限位 / 无权限时忽略 */ }
   return path;
 }
 

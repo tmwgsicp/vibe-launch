@@ -11,7 +11,7 @@ import { connectSSH, runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
 
 const execAsync = promisify(_exec);
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 
 export interface FrontendResult {
   project: string;

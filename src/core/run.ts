@@ -5,20 +5,16 @@
 import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, type ExecResult } from "./ssh.js";
+import { shQuote } from "./sh.js";
 
 /** 容器名只可能是 [A-Za-z0-9_.-]，任何别的字符都拒掉，杜绝命令注入。 */
 const validContainer = (n: string) => /^[A-Za-z0-9_.-]+$/.test(n);
 
-/** POSIX 单引号转义：把任意命令原样塞进 sh -c '...'（'→'\''）。 */
-function shSingleQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
-/** 构造在容器内执行命令的 docker exec 串。容器名校验 + JSON 引用挡注入；命令用 sh -c 单引号包裹保持原样。 */
+/** 构造在容器内执行命令的 docker exec 串。容器名校验 + 单引号转义挡注入；命令用 sh -c 单引号包裹保持原样。 */
 export function dockerExecCmd(container: string, command: string, cwd?: string): string {
   if (!validContainer(container)) throw new Error(`非法容器名：${container}`);
-  const w = cwd ? ` -w ${JSON.stringify(cwd)}` : "";
-  return `docker exec${w} ${JSON.stringify(container)} sh -c ${shSingleQuote(command)}`;
+  const w = cwd ? ` -w ${shQuote(cwd)}` : "";
+  return `docker exec${w} ${shQuote(container)} sh -c ${shQuote(command)}`;
 }
 
 export interface RunResult {

@@ -2,6 +2,7 @@
 import type { Config, StatusResult } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, curlOnServer } from "./ssh.js";
+import { shQuote as q } from "./sh.js";
 
 export async function status(config: Config, projectName: string): Promise<StatusResult> {
   const { project, server, serverName } = getProject(config, projectName);
@@ -18,7 +19,7 @@ export async function status(config: Config, projectName: string): Promise<Statu
     if (project.dir) {
       const g = await runOnServer(
         server,
-        `cd ${JSON.stringify(project.dir)} 2>/dev/null && ` +
+        `cd ${q(project.dir)} 2>/dev/null && ` +
           `{ echo "H:$(git rev-parse --short HEAD 2>/dev/null)"; ` +
           `echo "B:$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; ` +
           `echo "R:$(git config --get remote.origin.url 2>/dev/null)"; } || true`
@@ -33,7 +34,7 @@ export async function status(config: Config, projectName: string): Promise<Statu
 
     // 容器状态
     for (const name of project.containers ?? []) {
-      const r = await runOnServer(server, `docker inspect -f '{{.State.Status}}' ${JSON.stringify(name)} 2>/dev/null || echo missing`);
+      const r = await runOnServer(server, `docker inspect -f '{{.State.Status}}' ${q(name)} 2>/dev/null || echo missing`);
       result.containers.push({ name, state: r.stdout.trim() || "unknown" });
     }
 

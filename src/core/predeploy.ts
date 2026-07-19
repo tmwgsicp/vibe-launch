@@ -4,7 +4,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer } from "./ssh.js";
 
-const q = (s: string) => JSON.stringify(s);
+import { shQuote as q } from "./sh.js";
 
 export interface IncomingCommit {
   rev: string;

@@ -4,6 +4,7 @@
 import { WECHAT_QR, GROUP_QR } from "./qr-assets.js";
 export const INDEX_HTML = String.raw`<!doctype html>
 <html lang="zh"><head>
+<script>window.__VL_TOKEN__='%%VL_TOKEN%%';</script>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>vibe-launch</title>
 <style>
@@ -255,7 +256,7 @@ let CONFIG={servers:{},projects:{}},STATUS={},STATS={},MCP=null,TUN=[],HIST={},C
 let THEME='system',AUTOREF=false,AUTOREF_SEC=30,LOG={server:'',container:'',lines:[],es:null};
 
 function toast(m,t){const e=document.createElement('div');e.className='toast '+(t||'');e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),3000);}
-async function api(p,o,ms){ms=ms===undefined?20000:ms;const ac=new AbortController();const t=ms>0?setTimeout(()=>ac.abort(),ms):null;try{const r=await fetch(p,Object.assign({signal:ac.signal},o||{}));const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;}catch(e){if(e&&e.name==='AbortError')throw new Error('请求超时（'+Math.round(ms/1000)+'s）—— 服务器无响应');throw e;}finally{if(t)clearTimeout(t);}}
+async function api(p,o,ms){ms=ms===undefined?20000:ms;const ac=new AbortController();const t=ms>0?setTimeout(()=>ac.abort(),ms):null;try{o=o||{};const hdrs=Object.assign({'X-VL-Token':window.__VL_TOKEN__||''},o.headers||{});const r=await fetch(p,Object.assign({signal:ac.signal},o,{headers:hdrs}));const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;}catch(e){if(e&&e.name==='AbortError')throw new Error('请求超时（'+Math.round(ms/1000)+'s）—— 服务器无响应');throw e;}finally{if(t)clearTimeout(t);}}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function gb(mb){return mb>=1024?(mb/1024).toFixed(1)+'G':mb+'M';}
 function applyTheme(){const eff=THEME==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):THEME;document.documentElement.dataset.theme=eff;}
@@ -579,7 +580,7 @@ function renderLogs(){const f=$('log_filter').value.trim(),fl=f.toLowerCase(),eo
   if($('log_live').checked)$('log_body').scrollTop=$('log_body').scrollHeight;}
 function toggleLive(){const on=$('log_live').checked;$('log_livebox').classList.toggle('on',on);
   if(on){LOG.lines=[];renderLogs();
-    const es=new EventSource('/api/container-logs/stream?server='+encodeURIComponent(LOG.server)+'&container='+encodeURIComponent(LOG.container)+'&tail='+$('log_tail').value);
+    const es=new EventSource('/api/container-logs/stream?server='+encodeURIComponent(LOG.server)+'&container='+encodeURIComponent(LOG.container)+'&tail='+$('log_tail').value+'&token='+encodeURIComponent(window.__VL_TOKEN__||''));
     es.onmessage=e=>{LOG.lines.push(e.data);if(LOG.lines.length>5000)LOG.lines=LOG.lines.slice(-5000);renderLogs();};LOG.es=es;
   }else{if(LOG.es){LOG.es.close();LOG.es=null;}reloadLogs();}}
 function exportLogs(){const blob=new Blob([LOG.lines.join('\n')],{type:'text/plain;charset=utf-8'});
