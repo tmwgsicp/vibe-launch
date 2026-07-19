@@ -13,6 +13,7 @@ import { getServerStats } from "../core/serverstats.js";
 import { runOnServer, connectSSH, enableSshPool } from "../core/ssh.js";
 import { createTunnel, type TunnelHandle } from "../core/tunnel.js";
 import { getHistory } from "../core/history.js";
+import { readOps } from "../core/oplog.js";
 import { preDeploy } from "../core/predeploy.js";
 import { rollback } from "../core/rollback.js";
 import { runOnProject } from "../core/run.js";
@@ -169,6 +170,10 @@ export async function startUi(port = 7777, open = true): Promise<void> {
       // 部署历史
       if (path === "/api/history" && req.method === "GET") {
         return json(res, 200, getHistory(q.get("project") || undefined, 20));
+      }
+      // 操作日志（全量审计流：deploy/restart/rollback/env/run/proxy/接入/删容器…）
+      if (path === "/api/oplog" && req.method === "GET") {
+        return json(res, 200, readOps(parseInt(q.get("limit") || "80", 10) || 80, q.get("target") || undefined));
       }
       // 回滚到指定版本
       if (path.startsWith("/api/rollback/") && req.method === "POST") {

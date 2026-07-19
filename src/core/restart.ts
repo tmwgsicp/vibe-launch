@@ -5,6 +5,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { waitHealthy } from "./ssh.js";
 import { reloadServices } from "./reload.js";
+import { recordOp } from "./oplog.js";
 
 export interface RestartResult {
   project: string;
@@ -67,9 +68,11 @@ export async function restart(
     result.success = allRestarted && allHealthy;
     if (!allRestarted) result.error = "部分容器重启失败";
     else if (!allHealthy) result.error = "容器已重启，但健康检查未通过";
+    recordOp("restart", projectName, result.success, opts.only?.length ? "--only " + opts.only.join(",") : result.error);
     return result;
   } catch (e) {
     result.error = (e as Error).message;
+    recordOp("restart", projectName, false, result.error);
     return result;
   }
 }

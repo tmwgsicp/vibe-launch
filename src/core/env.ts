@@ -6,6 +6,7 @@ import { runOnServer, waitHealthy } from "./ssh.js";
 
 import { shQuote as q } from "./sh.js";
 import { reloadServices } from "./reload.js";
+import { recordOp } from "./oplog.js";
 const validKey = (k: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(k);
 
 export interface EnvSetResult {
@@ -91,9 +92,11 @@ export async function setEnv(
       }
     }
     res.success = true;
+    recordOp("env-set", projectName, true, "keys: " + Object.keys(kv).join(",") + (res.warning ? "（未重启）" : ""));
     return res;
   } catch (e) {
     res.error = (e as Error).message;
+    recordOp("env-set", projectName, false, res.error);
     return res;
   }
 }

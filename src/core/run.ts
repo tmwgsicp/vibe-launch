@@ -6,6 +6,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, type ExecResult } from "./ssh.js";
 import { shQuote } from "./sh.js";
+import { recordOp } from "./oplog.js";
 
 /** 容器名只可能是 [A-Za-z0-9_.-]，任何别的字符都拒掉，杜绝命令注入。 */
 const validContainer = (n: string) => /^[A-Za-z0-9_.-]+$/.test(n);
@@ -48,6 +49,8 @@ export async function runOnProject(
   }
 
   const r: ExecResult = await runOnServer(server, effective, cwd, opts.timeoutMs ?? 120000);
+  // 穿透执行是任意命令，务必留痕（此前完全无记录）
+  recordOp("run", projectName, r.code === 0, (opts.container ? "[" + opts.container + "] " : "") + command);
   return {
     project: projectName,
     server: serverName,

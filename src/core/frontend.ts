@@ -9,6 +9,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { connectSSH, runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
+import { recordOp } from "./oplog.js";
 
 const execAsync = promisify(_exec);
 import { shQuote as q } from "./sh.js";
@@ -102,5 +103,6 @@ export async function deployFrontend(config: Config, projectName: string): Promi
     return res;
   } finally {
     recordDeploy({ project: projectName, ts: Date.now(), success: res.success, error: res.error, action: "deploy" });
+    recordOp("frontend", projectName, res.success, res.error);
   }
 }

@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { loadConfig, saveConfig, MANAGED_KEY_REF } from "./config.js";
 import type { Config, ServerConfig } from "./types.js";
 import { shQuote } from "./sh.js";
+import { recordOp } from "./oplog.js";
 
 function expandHome(p: string): string {
   return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
@@ -113,6 +114,7 @@ export async function onboard(opts: OnboardOptions): Promise<OnboardResult> {
       const p = saveConfig(cfg);
       steps.push(`已写入清单 ${p}`);
       result.success = true;
+      recordOp("onboard", opts.alias, true, "manual " + opts.user + "@" + opts.host);
       return result;
     }
 
@@ -136,6 +138,7 @@ export async function onboard(opts: OnboardOptions): Promise<OnboardResult> {
       const p = saveConfig(cfg);
       steps.push(`已写入清单 ${p}（⚠️ 密码明文存本地配置，建议改用 key）`);
       result.success = true;
+      recordOp("onboard", opts.alias, true, "password " + opts.user + "@" + opts.host);
       return result;
     }
 
@@ -207,9 +210,11 @@ export async function onboard(opts: OnboardOptions): Promise<OnboardResult> {
     steps.push(`已写入清单 ${path}`);
 
     result.success = true;
+    recordOp("onboard", opts.alias, true, "key " + result.finalUser + "@" + opts.host);
     return result;
   } catch (e) {
     result.error = (e as Error).message;
+    recordOp("onboard", opts.alias, false, result.error);
     return result;
   }
 }

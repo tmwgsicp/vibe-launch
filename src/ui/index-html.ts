@@ -153,6 +153,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
       <a data-v="servers">服务器</a>
       <a data-v="projects">项目</a>
       <a data-v="mcp">MCP</a>
+      <a data-v="log">日志</a>
       <a data-v="settings">设置</a>
     </nav>
     <div class="foot">
@@ -172,6 +173,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
       <section class="view" id="view-servers"></section>
       <section class="view" id="view-projects"></section>
       <section class="view" id="view-mcp"></section>
+      <section class="view" id="view-log"></section>
       <section class="view" id="view-settings"></section>
     </div>
   </main>
@@ -282,10 +284,10 @@ function applyAutoref(){if(timer){clearInterval(timer);timer=null;}if(AUTOREF)ti
 function setHideip(on){HIDEIP=on;try{localStorage.setItem('vl-hideip',on?'1':'')}catch(e){}render();}
 
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.v));
-function go(v){VIEW=v;
+function go(v){VIEW=v;if(v==='log')OPLOG=null;
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='view-'+v));
-  const T={overview:['总览','部署状态一眼概况'],servers:['服务器','接入的机器、指标、隧道'],projects:['项目','部署、历史、容器、转 git'],mcp:['MCP','让 AI 直接调用 vibe-launch'],settings:['设置','外观、行为、关于']};
+  const T={overview:['总览','部署状态一眼概况'],servers:['服务器','接入的机器、指标、隧道'],projects:['项目','部署、历史、容器、转 git'],mcp:['MCP','让 AI 直接调用 vibe-launch'],log:['操作日志','所有改动型操作的审计流，便于追踪排查'],settings:['设置','外观、行为、关于']};
   $('vtitle').textContent=(T[v]||T.overview)[0];$('vsub').textContent=(T[v]||T.overview)[1];
   $('addBtn').style.display=(v==='servers'||v==='projects')?'':'none';
   $('addBtn').textContent=v==='servers'?'接入服务器':'登记项目';
@@ -304,12 +306,21 @@ function loadStats(){for(const n of Object.keys(CONFIG.servers||{})){
 async function loadTun(){try{TUN=await api('/api/tunnels');}catch(e){TUN=[];}}
 async function loadMcp(){try{MCP=await api('/api/mcp-info');}catch(e){}}
 async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textContent='刷新中…';}
+  if(VIEW==='log')OPLOG=null;
   try{await loadConfig();render();loadStats();await Promise.all([loadStatus(),loadTun()]);
     // 手动刷新时连带刷新当前展开的容器/历史（仍保留旧值，不闪）
     for(const id of EXP){if(id.slice(0,2)==='s:')loadCts(id.slice(2));else if(id.slice(0,2)==='p:')loadHist(id.slice(2));}
     render();}
   finally{if(b){b.disabled=false;b.textContent='刷新';}}}
-function render(){({overview:rOverview,servers:rServers,projects:rProjects,mcp:rMcp,settings:rSettings}[VIEW]||rOverview)();}
+function render(){({overview:rOverview,servers:rServers,projects:rProjects,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
+let OPLOG=null;
+async function loadOplog(){try{OPLOG=await api('/api/oplog?limit=150');}catch(e){OPLOG=[];}if(VIEW==='log')render();}
+function rLog(){
+  if(OPLOG===null){$('view-log').innerHTML='<div class="empty">加载中…</div>';loadOplog();return;}
+  if(!OPLOG.length){$('view-log').innerHTML='<div class="empty">暂无操作记录。部署 / 重启 / 回滚 / 改 env / 穿透执行 / 反代 / 接入 / 删容器 等操作都会记在这里。</div>';return;}
+  const rows=OPLOG.map(o=>'<div class="hist"><span class="dot '+(o.ok?'ok':'bad')+'"></span>'+esc(new Date(o.ts).toLocaleString())+' · <b>'+esc(o.action)+'</b> · '+esc(o.target)+(o.detail?' · <span class="mt">'+esc(o.detail)+'</span>':'')+'</div>').join('');
+  $('view-log').innerHTML='<div class="list" style="padding:12px 14px">'+rows+'</div>';
+}
 
 function mbar(p){p=Math.max(0,Math.min(100,Math.round(p)));const c=p>=90?'hot':(p>=70?'warn':'');return '<div class="bar"><i class="'+c+'" style="width:'+p+'%"></i></div>';}
 function stDot(s){if(!s)return '<span class="st"><span class="dot mut"></span>未刷新</span>';

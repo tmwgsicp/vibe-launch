@@ -16,6 +16,7 @@ import { deployFrontend } from "./core/frontend.js";
 import { setEnv } from "./core/env.js";
 import { watch } from "./core/watch.js";
 import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js";
+import { readOps } from "./core/oplog.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -452,6 +453,20 @@ proxyCmd
     for (const s of sites) {
       console.log(`# ${s.project}`);
       console.log(s.content.split("\n").map((l) => "  " + l).join("\n"));
+    }
+  });
+
+program
+  .command("log")
+  .description("看操作日志（deploy/restart/rollback/env/run/proxy/接入/删容器…，便于追踪排查）")
+  .option("--limit <n>", "条数", "40")
+  .option("--target <name>", "只看某项目/服务器")
+  .action((opts) => {
+    const ops = readOps(Number(opts.limit) || 40, opts.target);
+    if (!ops.length) { console.log("（暂无操作记录）"); return; }
+    for (const o of ops.slice().reverse()) { // 时间正序：最新在最下，像 tail
+      const t = new Date(o.ts).toLocaleString();
+      console.log(`${t}  ${o.ok ? "✓" : "✗"} ${o.action.padEnd(15)} ${o.target}${o.detail ? "  " + o.detail : ""}`);
     }
   });
 

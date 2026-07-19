@@ -7,6 +7,7 @@ import { recordDeploy } from "./history.js";
 
 import { shQuote as q } from "./sh.js";
 import { reloadServices } from "./reload.js";
+import { recordOp } from "./oplog.js";
 // 只接受短/长 commit hash 或 HEAD~N，挡命令注入
 const validRev = (rev: string) => /^[0-9a-fA-F]{4,40}$/.test(rev) || /^HEAD~\d+$/.test(rev);
 
@@ -76,7 +77,9 @@ export async function rollback(
     return result;
   } finally {
     // dry-run 不记历史（没真回滚）
-    if (!opts.dryRun)
+    if (!opts.dryRun) {
       recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "rollback" });
+      recordOp("rollback", projectName, result.success, result.error || result.gitRev);
+    }
   }
 }

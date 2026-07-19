@@ -9,6 +9,7 @@ import type { Config, ProxyConfig, ServerConfig } from "./types.js";
 import { getProject, getServerOf } from "./config.js";
 import { runOnServer } from "./ssh.js";
 import { shQuote as q } from "./sh.js";
+import { recordOp } from "./oplog.js";
 
 const SITE_DIR = "/etc/caddy/vibe-launch.d";
 const CADDYFILE = "/etc/caddy/Caddyfile";
@@ -100,9 +101,11 @@ export async function setupProxy(config: Config, target: string, opts: { caddyUr
     }
 
     res.success = true;
+    recordOp("proxy-setup", target, true, conflict ? "80/443 有冲突" : undefined);
     return res;
   } catch (e) {
     res.error = (e as Error).message;
+    recordOp("proxy-setup", target, false, res.error);
     return res;
   }
 }
@@ -169,9 +172,11 @@ export async function applyProxy(config: Config, projectName: string): Promise<P
     res.steps.push(`  提示：确保 ${res.domain} 的 DNS 已指向本机${project.proxy.tls !== false ? "，首次访问 Caddy 会自动签证书（需 80/443 可达）" : ""}`);
 
     res.success = true;
+    recordOp("proxy-apply", projectName, true, res.domain + " → " + project.proxy.upstream);
     return res;
   } catch (e) {
     res.error = (e as Error).message;
+    recordOp("proxy-apply", projectName, false, res.error);
     return res;
   }
 }
@@ -197,9 +202,11 @@ export async function removeProxy(config: Config, projectName: string): Promise<
     if (r.code !== 0) res.steps.push(`⚠ reload 未成功：${(r.stderr || r.stdout).trim().slice(0, 200)}`);
     else res.steps.push("✓ 已 reload");
     res.success = true;
+    recordOp("proxy-rm", projectName, true);
     return res;
   } catch (e) {
     res.error = (e as Error).message;
+    recordOp("proxy-rm", projectName, false, res.error);
     return res;
   }
 }

@@ -3,6 +3,7 @@ import type { Config, DeployResult } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer, waitHealthy } from "./ssh.js";
 import { recordDeploy } from "./history.js";
+import { recordOp } from "./oplog.js";
 import { shQuote as q } from "./sh.js";
 
 function truncate(s: string, n = 4000): string {
@@ -119,5 +120,6 @@ export async function deploy(config: Config, projectName: string, opts: DeployOp
   } finally {
     // 不管从哪个入口（UI / CLI / MCP）部署，都记一条历史——闭环不漏
     recordDeploy({ project: projectName, ts: Date.now(), success: result.success, gitRev: result.gitRev, error: result.error, action: "deploy" });
+    if (!opts.dryRun) recordOp("deploy", projectName, result.success, result.error || result.gitRev);
   }
 }

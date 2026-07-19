@@ -10,6 +10,7 @@ import type { Config } from "./types.js";
 import { getProject } from "./config.js";
 import { runOnServer } from "./ssh.js";
 import { getStoredToken } from "./github-auth.js";
+import { recordOp } from "./oplog.js";
 
 import { shQuote as q } from "./sh.js"; // POSIX 单引号转义（防注入，见 sh.ts）
 
@@ -263,9 +264,11 @@ export async function setupGit(config: Config, opts: SetupGitOptions): Promise<S
     const rev = (await runOnServer(server, `cd ${q(dir)} && git rev-parse --short HEAD 2>/dev/null || true`)).stdout.trim();
     result.gitRev = rev || undefined;
     result.success = true;
+    recordOp("setup-git", opts.project, true, ownerRepo + " @ " + branch);
     return result;
   } catch (e) {
     result.error = (e as Error).message;
+    recordOp("setup-git", opts.project, false, result.error);
     return result;
   }
 }

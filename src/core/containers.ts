@@ -3,6 +3,7 @@
 import { runOnServer } from "./ssh.js";
 import { getServerOf } from "./config.js";
 import type { Config } from "./types.js";
+import { recordOp } from "./oplog.js";
 
 import { shQuote as q } from "./sh.js";
 
@@ -158,6 +159,7 @@ export async function removeContainer(
       throw new Error("容器正在运行，请先停止或重启完再删（本功能不强删运行中的容器）");
     throw new Error(out || "删除失败");
   }
+  recordOp("container-remove", serverName, true, n);
   return { ok: true, output: out };
 }
 
@@ -173,5 +175,6 @@ export async function pruneContainers(
   // 解析输出里的 "Deleted Containers:" 行数 和 "Total reclaimed space: X"
   const removed = (out.match(/^[0-9a-f]{12,}/gim) || []).length;
   const m = out.match(/Total reclaimed space:\s*(.+)$/im);
+  recordOp("container-prune", serverName, true, `清 ${removed} 个，释放 ${m ? m[1].trim() : "0B"}`);
   return { ok: true, removed, reclaimed: m ? m[1].trim() : "0B", output: out };
 }
