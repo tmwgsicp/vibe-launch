@@ -9,6 +9,8 @@ import { status } from "./core/status.js";
 import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
 import { getHistory } from "./core/history.js";
+import { readOps } from "./core/oplog.js";
+import { doctor } from "./core/doctor.js";
 import { preDeploy } from "./core/predeploy.js";
 import { checkExposure } from "./core/portcheck.js";
 import { getServerStats } from "./core/serverstats.js";
@@ -195,6 +197,29 @@ export async function startMcp() {
       try { return text(await checkExposure(loadConfig(), server)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
     }
+  );
+
+  server.tool(
+    "check_network",
+    "网络体检（只读）：从服务器探 Docker Hub / GitHub / Caddy / npm / PyPI 的可达性（HTTP 码 + 耗时 + 失败原因）+ DNS + docker 版本 + 现有镜像。" +
+      "部署失败 / git pull 卡住 / docker pull 慢时，用它判断是网络/DNS/证书/被墙哪种问题，而不是瞎猜。" +
+      "reason 会说清：DNS 解析失败 / 连接超时(被墙) / CA 证书缺失 等。",
+    { server: z.string().describe("服务器别名，见 list_projects") },
+    async ({ server }) => {
+      try { return text(await doctor(loadConfig(), server)); }
+      catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "get_oplog",
+    "看操作日志（只读，全量审计流）：deploy / restart / rollback / env-set / run / proxy / 接入 / 删容器 等所有改动型操作的留痕（时间、动作、目标、成败、摘要）。" +
+      "比 get_history 更全（get_history 只有部署/回滚）。排查'谁在什么时候改了什么导致现在的状态'时用。",
+    {
+      target: z.string().optional().describe("只看某项目/服务器；省略看全部"),
+      limit: z.number().optional().describe("条数，默认 40"),
+    },
+    async ({ target, limit }) => text(readOps(limit ?? 40, target))
   );
 
   server.tool(
