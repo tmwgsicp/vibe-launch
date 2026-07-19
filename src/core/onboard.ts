@@ -25,8 +25,14 @@ export interface OnboardOptions {
   /** 可选：创建专用部署用户并加 docker 组 */
   deployUser?: string;
   note?: string;
-  /** 认证方式：key=装专用钥匙后免密（推荐、更安全）；password=直接存密码登录 */
-  auth?: "key" | "password";
+  /**
+   * 认证方式：
+   * - key=用密码/现有 key 登录后自动装专用公钥（推荐）
+   * - password=直接存密码登录
+   * - manual=不登录，生成一段安装公钥的命令让你贴进服务器控制台(VNC/扫码登录的网页终端)执行，
+   *   之后本工具验证免密连通再落库。适合拿不到密码但能进控制台的场景。
+   */
+  auth?: "key" | "password" | "manual";
 }
 
 export interface OnboardResult {
@@ -34,7 +40,25 @@ export interface OnboardResult {
   success: boolean;
   steps: string[];
   finalUser: string;
+  /** 手动模式：让用户贴进服务器控制台执行的公钥安装命令（未验证通过前一并交回，供展示/重试）。 */
+  manualInstall?: { pubkey: string; snippet: string };
   error?: string;
+}
+
+/**
+ * 生成"手动装公钥"的一段命令：确保本地有专用 key，返回公钥 + 可直接粘贴进服务器控制台执行的安装命令。
+ * 命令幂等（已存在同一行则不重复追加），供 CLI/UI 在拿不到密码、只能走网页终端时引导用户自助安装。
+ */
+export function manualSnippet(
+  identityFile: string = MANAGED_KEY_REF,
+  steps: string[] = []
+): { pubkey: string; snippet: string; keyPath: string } {
+  const pubkey = ensureKeypair(identityFile, steps);
+  const k = shQuote(pubkey);
+  const snippet =
+    `mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && ` +
+    `grep -qxF ${k} ~/.ssh/authorized_keys || echo ${k} >> ~/.ssh/authorized_keys`;
+  return { pubkey, snippet, keyPath: identityFile };
 }
 
 /** 确保本地有密钥对，返回公钥内容 */
@@ -62,6 +86,36 @@ export async function onboard(opts: OnboardOptions): Promise<OnboardResult> {
   };
 
   try {
+    // 手动/扫码模式：拿不到密码但能进控制台。生成安装命令 → 用户贴进控制台执行 → 这里用 key 验证连通再落库。
+    // 幂等：装好前每次都返回 snippet + success=false；装好后再跑本函数即验证通过并写清单。
+    if (opts.auth === "manual") {
+      const { pubkey, snippet } = manualSnippet(identityFile, steps);
+      result.manualInstall = { pubkey, snippet };
+      result.finalUser = opts.user;
+      try {
+        const ssh = new NodeSSH();
+        await ssh.connect({ host: opts.host, username: opts.user, port, privateKeyPath: expandHome(identityFile) });
+        const who = await ssh.execCommand("whoami");
+        ssh.dispose();
+        steps.push(`✓ 免密登录验证通过（whoami=${who.stdout.trim()}）`);
+      } catch {
+        result.error = "还没能免密连上（公钥可能尚未安装）。把上面的命令贴进服务器控制台执行后，重跑本命令即可验证。";
+        return result;
+      }
+      let cfg: Config;
+      try { cfg = loadConfig(); } catch { cfg = { servers: {}, projects: {} }; }
+      cfg.servers[opts.alias] = {
+        host: opts.host, user: opts.user,
+        ...(port !== 22 ? { port } : {}),
+        identityFile,
+        ...(opts.note ? { note: opts.note } : {}),
+      } as ServerConfig;
+      const p = saveConfig(cfg);
+      steps.push(`已写入清单 ${p}`);
+      result.success = true;
+      return result;
+    }
+
     // 密码认证模式：只验证密码能连，然后存进配置（不装 key）
     if (opts.auth === "password") {
       if (!opts.password) throw new Error("auth=password 需要 --password");

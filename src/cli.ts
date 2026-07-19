@@ -26,6 +26,15 @@ function confirm(prompt: string): Promise<boolean> {
   });
 }
 
+/** 读一行输入（返回 trim 后的字符串）。非 TTY 返回空串。 */
+function question(prompt: string): Promise<string> {
+  if (!process.stdin.isTTY) return Promise.resolve("");
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(prompt, (a) => { rl.close(); resolve(a.trim()); });
+  });
+}
+
 /** 解析时长："30m" / "90s" / "1h" → 毫秒；无单位当分钟；解析不了默认 10 分钟。 */
 function parseDuration(s: string): number {
   const m = String(s).trim().match(/^(\d+)\s*([smh])?$/i);
@@ -234,11 +243,12 @@ serverCmd
   .option("--port <port>", "SSH 端口", "22")
   .option("--key <path>", "本地私钥路径（不填则用 vibe-launch 自管的专用 key，会自动生成）")
   .option("--deploy-user <name>", "顺便创建专用部署用户并加 docker 组")
-  .option("--auth <method>", "认证方式：key（装专用钥匙免密，推荐）| password（直接存密码）", "key")
+  .option("--auth <method>", "认证方式：key（装专用钥匙免密，推荐）| password（存密码）| manual（拿不到密码时，生成命令贴进控制台自助装公钥）", "key")
   .option("--note <note>", "备注，如 海外/国内")
   .action(async (alias: string, opts) => {
-    console.log(`==> 接入服务器 ${alias} (${opts.host}) …`);
-    const r = await onboard({
+    const auth: "key" | "password" | "manual" =
+      opts.auth === "password" ? "password" : opts.auth === "manual" ? "manual" : "key";
+    const args = {
       alias,
       host: opts.host,
       user: opts.user,
@@ -246,9 +256,28 @@ serverCmd
       port: Number(opts.port),
       identityFile: opts.key,
       deployUser: opts.deployUser,
-      auth: opts.auth === "password" ? "password" : "key",
+      auth,
       note: opts.note,
-    });
+    };
+    console.log(`==> 接入服务器 ${alias} (${opts.host}) …`);
+    let r = await onboard(args);
+
+    // 手动/扫码模式：还没连上就把安装命令交给用户，去控制台贴执行，TTY 下引导按回车重验。
+    if (auth === "manual" && !r.success && r.manualInstall) {
+      console.log(`\n拿不到密码没关系。把下面这段【整段复制】，贴进你服务器的控制台`);
+      console.log(`（云厂商网页终端 / VNC / 扫码登录进去的那个 shell）里执行，装上 vibe-launch 的公钥：\n`);
+      console.log(`  ${r.manualInstall.snippet}\n`);
+      while (process.stdin.isTTY && !r.success) {
+        const a = await question("贴好并执行后，按回车验证连通（输 q 放弃）: ");
+        if (/^q(uit)?$/i.test(a)) break;
+        r = await onboard(args);
+        if (!r.success) console.log("  ✗ 还没连上——确认公钥已装好、host/user/端口无误，再按回车重试。");
+      }
+      if (!process.stdin.isTTY && !r.success) {
+        console.log("装好公钥后，重跑同一条 `server add ... --auth manual` 即可验证并落库。");
+      }
+    }
+
     for (const s of r.steps) console.log(`  ${s}`);
     if (r.success) console.log(`✅ ${alias} 接入完成，以后免密直连（user=${r.finalUser}）`);
     else {

@@ -7,7 +7,7 @@ import { shQuote } from "../core/sh.js";
 import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject } from "../core/config.js";
 import { deploy } from "../core/deploy.js";
 import { status } from "../core/status.js";
-import { onboard } from "../core/onboard.js";
+import { onboard, manualSnippet } from "../core/onboard.js";
 import { setupGit } from "../core/setup-git.js";
 import { getServerStats } from "../core/serverstats.js";
 import { runOnServer, connectSSH, enableSshPool } from "../core/ssh.js";
@@ -360,6 +360,11 @@ export async function startUi(port = 7777, open = true): Promise<void> {
         const b = await readBody(req), t = TUNNELS.get(b.id);
         if (t) { t.close(); TUNNELS.delete(b.id); }
         return json(res, 200, { ok: true });
+      }
+      // 手动/扫码接入：生成"贴进控制台装公钥"的命令（不连服务器；host 无关，只装本工具公钥）
+      if (path === "/api/server/manual-snippet" && req.method === "POST") {
+        const b = await readBody(req);
+        return json(res, 200, manualSnippet(b.identityFile || undefined));
       }
       // 接入服务器
       if (path === "/api/server" && req.method === "POST") {

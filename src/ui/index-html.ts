@@ -182,7 +182,15 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>Host / IP<input id="s_host" placeholder="1.2.3.4"></label>
   <label>登录用户<input id="s_user" value="root"></label>
   <label>SSH 端口<input id="s_port" value="22"></label>
-  <label>初次登录密码（一次性装公钥用，已有 key 可留空）<input id="s_pw" type="password" placeholder="可留空"></label>
+  <label>接入方式<select id="s_auth" onchange="onAuthMode()">
+    <option value="key">密码 / 现有 key（自动装公钥，推荐）</option>
+    <option value="manual">手动 / 扫码（拿不到密码：生成命令，自己贴进控制台装）</option>
+  </select></label>
+  <label id="s_pw_l">初次登录密码（一次性装公钥用，已有 key 可留空）<input id="s_pw" type="password" placeholder="可留空"></label>
+  <div id="s_manual" style="display:none">
+    <div class="dsub">把下面这段【整段复制】，贴进服务器控制台（云厂商网页终端 / VNC / 扫码登录进去的那个 shell）执行装上公钥，然后点“验证并接入”。</div>
+    <div class="code"><button type="button" class="sm cp" onclick="copyManual()">复制</button><span id="s_snip">生成中…</span></div>
+  </div>
   <label>备注<input id="s_note" placeholder="海外 / 国内"></label>
 </div><div class="df"><button onclick="serverDlg.close()">取消</button><button class="primary" id="s_go" onclick="submitServer()">接入</button></div></dialog>
 
@@ -607,12 +615,18 @@ async function startTunPort(target,port){try{const r=await api('/api/tunnel/star
 function startTunCustom(target){const p=prompt('转发服务器上的哪个端口？(如 1521 Oracle / 9200 ES)');if(!p)return;const port=parseInt(p,10);if(!port){toast('端口无效','err');return;}startTunPort(target,port);}
 async function stopTun(id){try{await api('/api/tunnel/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});toast('隧道已关');await loadTun();render();}catch(e){toast(e.message,'err');}}
 
-function openServerDlg(){serverDlg.showModal();}
+let MANUAL_SNIP='';
+function openServerDlg(){$('s_auth').value='key';MANUAL_SNIP='';onAuthMode();serverDlg.showModal();}
+async function onAuthMode(){const man=$('s_auth').value==='manual';$('s_pw_l').style.display=man?'none':'';$('s_manual').style.display=man?'':'none';$('s_go').textContent=man?'验证并接入':'接入';
+  if(man&&!MANUAL_SNIP){$('s_snip').textContent='生成中…';try{const r=await api('/api/server/manual-snippet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});MANUAL_SNIP=r.snippet;$('s_snip').textContent=r.snippet;}catch(e){$('s_snip').textContent='生成失败：'+e.message;}}}
+function copyManual(){if(MANUAL_SNIP)navigator.clipboard.writeText(MANUAL_SNIP).then(()=>toast('已复制'));}
 async function submitServer(){$('s_go').disabled=true;
-  try{const b={alias:$('s_alias').value.trim(),host:$('s_host').value.trim(),user:$('s_user').value.trim()||'root',port:Number($('s_port').value)||22,password:$('s_pw').value||undefined,note:$('s_note').value||undefined,auth:'key'};
+  try{const auth=$('s_auth').value;const b={alias:$('s_alias').value.trim(),host:$('s_host').value.trim(),user:$('s_user').value.trim()||'root',port:Number($('s_port').value)||22,password:auth==='manual'?undefined:($('s_pw').value||undefined),note:$('s_note').value||undefined,auth};
     if(!b.alias||!b.host){toast('别名和 host 必填','err');return;}
     const r=await api('/api/server',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)},60000);
-    if(r.success){toast('接入成功');serverDlg.close();await refreshAll();}else toast('接入失败：'+(r.error||'?'),'err');
+    if(r.success){toast('接入成功');serverDlg.close();await refreshAll();}
+    else if(auth==='manual')toast('还没连上——先把命令贴进控制台执行，再点验证','err');
+    else toast('接入失败：'+(r.error||'?'),'err');
   }catch(e){toast(e.message,'err');}finally{$('s_go').disabled=false;}}
 let EDITPROJ='',EDITSRV='';
 function fillSrvOpts(sel){$('p_server').innerHTML=Object.keys(CONFIG.servers||{}).map(k=>'<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>').join('');}
