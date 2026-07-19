@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { createInterface } from "node:readline";
+import { dirname } from "node:path";
 import { loadConfig, saveConfig, addProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
 import { restart } from "./core/restart.js";
@@ -27,6 +28,32 @@ function confirm(prompt: string): Promise<boolean> {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     rl.question(prompt, (a) => { rl.close(); resolve(/^y(es)?$/i.test(a.trim())); });
   });
+}
+
+/**
+ * 还原 git-bash(MSYS) 对命令行参数的路径转换。
+ * git-bash 会把以 / 开头的参数转成 <Git安装根>/…（如 /root → C:/Program Files/Git/root），
+ * 把本该发给 Linux 服务器的绝对路径弄坏（sg1-proxy 的 dir 就是这么坏的）。
+ * MSYS 根 = dirname(EXEPATH)（EXEPATH 是 git-bash 设的 …/Git/bin）。只在 win32 生效。
+ */
+function unmangle(p: string | undefined, label: string): string | undefined {
+  if (!p || process.platform !== "win32") return p;
+  const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
+  const exe = process.env.EXEPATH;
+  if (exe) {
+    const root = norm(dirname(exe)); // 如 C:/Program Files/Git
+    const pn = norm(p);
+    let fixed: string | undefined;
+    if (pn.toLowerCase() === root.toLowerCase()) fixed = "/";
+    else if (pn.toLowerCase().startsWith(root.toLowerCase() + "/")) fixed = pn.slice(root.length);
+    if (fixed && fixed !== p) {
+      console.error(`ℹ️ 检测到 git-bash 路径转换，已自动还原 ${label}：${p} → ${fixed}`);
+      return fixed;
+    }
+  }
+  if (/^[A-Za-z]:[\\/]/.test(p))
+    console.error(`⚠️ ${label} 像 Windows 路径（${p}）——服务器路径应为 Linux 绝对路径（如 /root）。git-bash 里用 //root 或前缀 MSYS_NO_PATHCONV=1 绕开转换。`);
+  return p;
 }
 
 /** 读一行输入（返回 trim 后的字符串）。非 TTY 返回空串。 */
@@ -146,7 +173,7 @@ program
   .action(async (project: string, cmd: string, opts) => {
     const r = await runOnProject(cfg(), project, cmd, {
       container: opts.container,
-      cwd: opts.cwd,
+      cwd: unmangle(opts.cwd, "--cwd"),
       timeoutMs: Math.max(1, Number(opts.timeout) || 120) * 1000,
     });
     if (r.stdout) process.stdout.write(r.stdout.endsWith("\n") ? r.stdout : r.stdout + "\n");
@@ -201,7 +228,7 @@ program
       kv[p.slice(0, i)] = p.slice(i + 1);
     }
     if (opts.dryRun) {
-      const r = await setEnv(cfg(), project, kv, { file: opts.file, dryRun: true });
+      const r = await setEnv(cfg(), project, kv, { file: unmangle(opts.file, "--file"), dryRun: true });
       if (r.error) { console.error("❌ " + r.error); process.exitCode = 1; return; }
       console.log(`将写入 ${r.file}：`);
       for (const c of r.changed) console.log(`  ${c.action === "add" ? "+" : "~"} ${c.key}`);
@@ -211,7 +238,7 @@ program
       const ok = await confirm(`确认改 ${project} 的 .env（${Object.keys(kv).join(", ")}）${opts.restart ? " 并重启" : ""}？[y/N] `);
       if (!ok) { console.log("已取消（非交互环境请加 -y）"); return; }
     }
-    const r = await setEnv(cfg(), project, kv, { file: opts.file, restart: opts.restart });
+    const r = await setEnv(cfg(), project, kv, { file: unmangle(opts.file, "--file"), restart: opts.restart });
     if (!r.success) { console.error(`❌ ${r.error ?? "未知"}`); process.exitCode = 1; return; }
     console.log(`✅ 已更新 ${r.file}`);
     for (const c of r.changed) console.log(`  ${c.action === "add" ? "+" : "~"} ${c.key}`);
@@ -309,7 +336,7 @@ projectCmd
       : undefined;
     addProject(c, name, {
       server: opts.server,
-      dir: opts.dir,
+      dir: unmangle(opts.dir, "--dir"),
       deploy: opts.deploy,
       containers: split(opts.containers),
       health: split(opts.health),
@@ -373,7 +400,7 @@ program
   .option("--name <name>", "项目/容器名", "app")
   .option("--port <port>", "对外端口", "8080")
   .action(async (server: string, dir: string, opts) => {
-    const r = await suggestDeploy(cfg(), server, dir, opts.name, Number(opts.port) || 8080);
+    const r = await suggestDeploy(cfg(), server, unmangle(dir, "<dir>") ?? dir, opts.name, Number(opts.port) || 8080);
     console.log(`类型: ${r.type}  端口: ${r.port}  健康检查: ${r.health.join(", ") || "(无)"}`);
     console.log(`\n推荐部署命令:\n  ${r.deploy || "(未识别)"}`);
     if (r.notes.length) { console.log("\n说明:"); for (const n of r.notes) console.log("  · " + n); }
