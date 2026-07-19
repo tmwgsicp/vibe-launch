@@ -204,7 +204,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>健康检查 URL（逗号分隔）<input id="p_health" placeholder="http://127.0.0.1:8000/health"></label>
   <label>反代域名（可选，Caddy 自动 HTTPS；多个用空格）<input id="p_pxdomain" placeholder="app.example.com"></label>
   <label>反代上游<input id="p_pxupstream" placeholder="127.0.0.1:8000"></label>
-  <div style="margin:2px 0 4px"><label style="display:inline-flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="p_pxtls" checked>自动 HTTPS（关掉则只听 http）</label></div>
+  <label style="flex-direction:row;align-items:center;gap:9px"><input type="checkbox" id="p_pxtls" checked style="width:auto"> 自动 HTTPS（关掉则只听 http）</label>
 </div><div class="df"><button onclick="projectDlg.close()">取消</button><button class="primary" id="p_go" onclick="submitProject()">登记</button></div></dialog>
 
 <dialog id="gitDlg"><div class="dh">转成 git 部署</div><div class="dsub">在服务器上把目录转成 git checkout：装 git、生成只读 deploy key、自动加到仓库、配好免密拉取。</div><div class="db">
@@ -487,15 +487,15 @@ function histHtml(k){const a=HIST[k];if(!a)return '<span class="mt">加载中…
 async function loadHist(k){try{HIST[k]=await api('/api/history?project='+encodeURIComponent(k));}catch(e){if(!HIST[k])HIST[k]=[];}render();}
 async function doProxyApply(k){const out=$('pxout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 应用反代中…</pre>';
   try{const r=await api('/api/proxy/apply/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
-    if(out)out.innerHTML='<pre class="out">'+(r.success?'✓ '+esc(r.domain||'')+' 已上线':'✗ '+esc(r.error||'失败'))+'\n'+esc((r.steps||[]).join('\n'))+'</pre>';
-    toast(r.success?'反代已应用':('反代失败：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+    if(out)out.innerHTML='<pre class="out">'+(r.success?esc(r.domain||'')+' 反代已上线':'反代有问题')+'\n'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';
+    toast(k+(r.success?' 反代已应用':' 反代有问题'),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function doProxyRm(k){if(!confirm('下线 '+k+' 的反代？会删除站点块并 reload Caddy。'))return;
   const out=$('pxout-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 下线中…</pre>';
   try{const r=await api('/api/proxy/rm/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
-    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(r.success?'已下线':('失败：'+(r.error||'?')),r.success?'':'err');}catch(e){toast(e.message,'err');}}
+    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(k+(r.success?' 反代已下线':' 下线有问题'),r.success?'':'err');}catch(e){toast(e.message,'err');}}
 async function doProxySetup(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 安装 / 接线 Caddy（可能要拉包，请稍等）…</pre>';
   try{const r=await api('/api/proxy/setup/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
-    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n✗ '+esc(r.error):'')+'</pre>';toast(r.success?'Caddy 已就绪':('setup 失败：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
+    if(out)out.innerHTML='<pre class="out">'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';toast(r.success?'Caddy 已就绪':('setup 有问题：'+(r.error||'?')),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function loadProxySites(k){const out=$('pxsrv-'+k);if(out)out.innerHTML='<span class="mt">加载中…</span>';
   try{const a=await api('/api/proxy/ls?server='+encodeURIComponent(k));
     if(out)out.innerHTML=a.length?a.map(s=>'<div class="code"><b>'+esc(s.project)+'</b>\n'+esc(s.content)+'</div>').join(''):'<span class="mt">（无 vibe-launch 管理的站点块）</span>';}catch(e){if(out)out.innerHTML='<span class="mt">'+esc(e.message)+'</span>';}}
