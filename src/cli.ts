@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { dirname } from "node:path";
-import { loadConfig, saveConfig, addProject } from "./core/config.js";
+import { loadConfig, saveConfig, addProject, removeProject } from "./core/config.js";
 import { deploy } from "./core/deploy.js";
 import { restart } from "./core/restart.js";
 import { status } from "./core/status.js";
@@ -350,6 +350,15 @@ projectCmd
     });
     const path = saveConfig(c);
     console.log(`✅ 项目 ${name} 已登记 → ${opts.server}（写入 ${path}）`);
+  });
+projectCmd
+  .command("rm <name>")
+  .description("从清单删除项目（只删记录，不动服务器上的任何东西）")
+  .action((name: string) => {
+    const c = loadConfig();
+    removeProject(c, name);
+    const path = saveConfig(c);
+    console.log(`✅ 已从清单删除项目 ${name}（写入 ${path}）`);
   });
 
 program
