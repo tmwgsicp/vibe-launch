@@ -206,6 +206,7 @@ export const INDEX_HTML = String.raw`<!doctype html>
   <label>部署到哪台服务器<select id="p_server"></select></label>
   <label>部署命令<input id="p_deploy" placeholder="git pull && docker restart myapp-api"></label>
   <label>工作目录（部署前 cd 进来）<span style="display:flex;gap:8px"><input id="p_dir" placeholder="/path/to/app" style="flex:1"><button type="button" class="sm" onclick="openBrowse()">浏览</button></span></label>
+  <label>本地代码目录（可选，给「推送本地代码」用；不用 git 时填你电脑上的代码文件夹）<input id="p_localsrc" placeholder="如 D:\code\myapp 或 /Users/me/code/myapp"></label>
   <label>容器名（逗号分隔）<input id="p_containers" placeholder="myapp-api,myapp-web"></label>
   <label>重启命令（非容器项目，如 systemd；配了容器可不填）<input id="p_restartcmd" placeholder="sudo systemctl restart my-svc"></label>
   <label>健康检查 URL（逗号分隔）<input id="p_health" placeholder="http://127.0.0.1:8000/health"></label>
@@ -538,6 +539,7 @@ function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
   d+='<div class="grp"><div class="acts"><button class="primary sm" onclick="event.stopPropagation();doDeploy(\''+esc(k)+'\')">部署</button>'
     +'<button class="sm" onclick="event.stopPropagation();doDeployDry(\''+esc(k)+'\')">预演</button>'
     +(p.frontend&&p.frontend.target?'<button class="sm" onclick="event.stopPropagation();doFrontend(\''+esc(k)+'\')">前端部署</button>':'')
+    +(p.localSource?'<button class="sm" onclick="event.stopPropagation();doPush(\''+esc(k)+'\')" title="把本地代码文件夹上传到服务器目录">推送代码</button>':'')
     +'<button class="sm" onclick="event.stopPropagation();doPredeploy(\''+esc(k)+'\')">看更新</button>'
     +'<button class="sm" onclick="event.stopPropagation();doStatus(\''+esc(k)+'\')">刷新状态</button>'
     +((s&&s.gitRepo)?'<button class="sm" onclick="event.stopPropagation();doRollbackPrev(\''+esc(k)+'\')">回滚上一版</button>':'')
@@ -680,6 +682,11 @@ async function doDeployDry(k){const out=$('out-'+k);if(out)out.innerHTML='<pre c
     if(out)out.innerHTML='<pre class="out">'+esc(r.output||'(无计划)')+'</pre>';
   }catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 // 前端一体：本地 build → 传产物 → 原子替换 → 重启（走项目 frontend 配置）
+async function doPush(k){if(!confirm('把本地代码上传到 '+k+' 的服务器目录？\n会覆盖同名文件（自动跳过 node_modules/.git 等）。'))return;
+  const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 上传中（大项目可能较久）…</pre>';
+  try{const r=await api('/api/push/'+encodeURIComponent(k),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})},0);
+    if(out)out.innerHTML='<pre class="out">'+(r.success?'上传完成':'上传有问题')+'\n'+esc((r.steps||[]).join('\n'))+(r.error?'\n'+esc(r.error):'')+'</pre>';
+    toast(k+(r.success?' 代码已上传':' 上传有问题'),r.success?'':'err');}catch(e){if(out)out.innerHTML='<pre class="out">'+esc(e.message)+'</pre>';toast(e.message,'err');}}
 async function doFrontend(k){if(!confirm('前端部署 '+k+'？\n会在你本地 build 并把产物上传替换到服务器，然后重启。'))return;
   const out=$('out-'+k);if(out)out.innerHTML='<pre class="out"><span class="spin"></span> 前端部署中（本地 build + 上传，可能较久）…</pre>';
   try{const r=await api('/api/deploy/'+encodeURIComponent(k)+'?frontend=1',{method:'POST'},0);
@@ -781,16 +788,16 @@ async function submitServer(){$('s_go').disabled=true;
 let EDITPROJ='',EDITSRV='';
 function fillSrvOpts(sel){$('p_server').innerHTML=Object.keys(CONFIG.servers||{}).map(k=>'<option'+(k===sel?' selected':'')+'>'+esc(k)+'</option>').join('');}
 function openProjectDlg(){EDITPROJ='';$('pdlg_title').textContent='登记部署项目';$('p_go').textContent='登记';
-  ['p_name','p_deploy','p_dir','p_containers','p_restartcmd','p_health','p_pxdomain','p_pxupstream'].forEach(id=>$(id).value='');$('p_pxtls').checked=true;fillSrvOpts();projectDlg.showModal();}
+  ['p_name','p_deploy','p_dir','p_localsrc','p_containers','p_restartcmd','p_health','p_pxdomain','p_pxupstream'].forEach(id=>$(id).value='');$('p_pxtls').checked=true;fillSrvOpts();projectDlg.showModal();}
 function openPrjEdit(k){EDITPROJ=k;const p=CONFIG.projects[k];$('pdlg_title').textContent='编辑项目';$('p_go').textContent='保存';
-  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_containers').value=(p.containers||[]).join(',');$('p_restartcmd').value=p.restartCmd||'';$('p_health').value=(p.health||[]).join(',');$('p_pxdomain').value=(p.proxy&&p.proxy.domain)||'';$('p_pxupstream').value=(p.proxy&&p.proxy.upstream)||'';$('p_pxtls').checked=!(p.proxy&&p.proxy.tls===false);fillSrvOpts(p.server);projectDlg.showModal();}
+  $('p_name').value=k;$('p_deploy').value=p.deploy||'';$('p_dir').value=p.dir||'';$('p_localsrc').value=p.localSource||'';$('p_containers').value=(p.containers||[]).join(',');$('p_restartcmd').value=p.restartCmd||'';$('p_health').value=(p.health||[]).join(',');$('p_pxdomain').value=(p.proxy&&p.proxy.domain)||'';$('p_pxupstream').value=(p.proxy&&p.proxy.upstream)||'';$('p_pxtls').checked=!(p.proxy&&p.proxy.tls===false);fillSrvOpts(p.server);projectDlg.showModal();}
 async function submitProject(){$('p_go').disabled=true;
   try{const sp=s=>s.split(',').map(x=>x.trim()).filter(Boolean);
     const name=$('p_name').value.trim(),server=$('p_server').value,deploy=$('p_deploy').value.trim();
     if(!name||!server||!deploy){toast('项目名/服务器/部署命令必填','err');return;}
     const pxd=$('p_pxdomain').value.trim();
     const proxy=pxd?{domain:pxd,upstream:$('p_pxupstream').value.trim()||'127.0.0.1:8000',tls:$('p_pxtls').checked}:null;
-    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,restartCmd:$('p_restartcmd').value.trim()||undefined,health:$('p_health').value?sp($('p_health').value):undefined,proxy};
+    const body={server,deploy,dir:$('p_dir').value.trim()||undefined,localSource:$('p_localsrc').value.trim()||undefined,containers:$('p_containers').value?sp($('p_containers').value):undefined,restartCmd:$('p_restartcmd').value.trim()||undefined,health:$('p_health').value?sp($('p_health').value):undefined,proxy};
     if(EDITPROJ){await api('/api/project/'+encodeURIComponent(EDITPROJ),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({newName:name},body))});toast('已保存');}
     else{await api('/api/project',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({name},body))});toast('已登记');}
     if(EDITPROJ&&EDITPROJ!==name)EXP.delete('p:'+EDITPROJ);projectDlg.close();await refreshAll();

@@ -155,7 +155,7 @@ export function updateProject(
   const merged = { ...cur };
   for (const [kk, vv] of Object.entries(patch)) if (vv !== undefined) (merged as Record<string, unknown>)[kk] = vv;
   if (merged.server && !config.servers[merged.server]) throw new Error(`server "${merged.server}" 不存在`);
-  for (const k of ["dir", "restartCmd"] as const) {
+  for (const k of ["dir", "restartCmd", "localSource"] as const) {
     if (merged[k] === "" || merged[k] == null) delete (merged as Record<string, unknown>)[k];
   }
   // proxy 传 null（UI 清空域名）或缺 domain 视为移除

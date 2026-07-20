@@ -42,6 +42,8 @@ export interface ProjectConfig {
   frontend?: FrontendConfig;
   /** vl env set 默认改的 .env 绝对路径（不填则用 <dir>/.env）。 */
   envFile?: string;
+  /** 本地代码目录：`vl push` / UI「推送本地代码」默认从这里上传到服务器 dir（给不用 git 的场景）。 */
+  localSource?: string;
   /** 反代（vl proxy）：声明"域名 → 上游"，vibe-launch 生成 Caddy 站点块 + reload。裸机 Caddy 独占 80/443。 */
   proxy?: ProxyConfig;
 }

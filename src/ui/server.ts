@@ -17,6 +17,7 @@ import { readOps } from "../core/oplog.js";
 import { preDeploy } from "../core/predeploy.js";
 import { rollback } from "../core/rollback.js";
 import { runOnProject } from "../core/run.js";
+import { pushCode } from "../core/push.js";
 import { deployFrontend } from "../core/frontend.js";
 import { VERSION } from "../version.js";
 import { checkExposure } from "../core/portcheck.js";
@@ -173,6 +174,12 @@ export async function startUi(
         if (q.get("frontend") === "1") return json(res, 200, { __frontend: true, ...(await deployFrontend(loadConfig(), name)) });
         const r = await deploy(loadConfig(), name, { dryRun: q.get("dryRun") === "1" }); // 历史已在 core deploy() 内记录
         return json(res, 200, r);
+      }
+      // 推送本地代码到项目的服务器目录
+      if (path.startsWith("/api/push/") && req.method === "POST") {
+        const name = decodeURIComponent(path.slice("/api/push/".length));
+        const b = await readBody(req);
+        return json(res, 200, await pushCode(loadConfig(), name, b.localDir || undefined));
       }
       // 穿透执行：在项目所在服务器跑即席命令（container 则 docker exec 进容器）
       if (path.startsWith("/api/run/") && req.method === "POST") {
@@ -470,7 +477,7 @@ export async function startUi(
         const b = await readBody(req);
         const c = loadConfig();
         updateProject(c, name, {
-          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, restartCmd: b.restartCmd, health: b.health, proxy: b.proxy,
+          server: b.server, dir: b.dir, deploy: b.deploy, containers: b.containers, restartCmd: b.restartCmd, health: b.health, proxy: b.proxy, localSource: b.localSource,
         }, b.newName);
         return json(res, 200, { ok: true, path: saveConfig(c) });
       }
@@ -493,6 +500,7 @@ export async function startUi(
           restartCmd: b.restartCmd,
           health: b.health,
           proxy: b.proxy || undefined,
+          localSource: b.localSource || undefined,
         });
         const p = saveConfig(c);
         return json(res, 200, { ok: true, path: p });

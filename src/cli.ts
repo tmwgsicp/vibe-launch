@@ -24,6 +24,7 @@ import { lintConfig } from "./core/lint.js";
 import { advise } from "./core/advise.js";
 import { startCollector } from "./core/monitor.js";
 import { sendNotify } from "./core/notify.js";
+import { pushCode } from "./core/push.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -189,6 +190,18 @@ program
       console.error(`(退出码 ${r.code})`);
       process.exitCode = r.code ?? 1;
     }
+  });
+
+program
+  .command("push <project>")
+  .description("把本地代码文件夹上传到项目的服务器目录（不用 git；自动跳过 node_modules 等）")
+  .option("--from <dir>", "本地代码目录（不填则用项目 localSource 或当前目录）")
+  .action(async (project: string, opts) => {
+    console.log(`==> 推送 ${project} 的本地代码 …`);
+    const r = await pushCode(cfg(), project, unmangle(opts.from, "--from"));
+    for (const s of r.steps) console.log("  " + s);
+    if (r.success) console.log(`✅ ${project} 代码已上传`);
+    else { console.error(`❌ ${r.error}`); process.exitCode = 1; }
   });
 
 program
