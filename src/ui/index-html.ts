@@ -288,7 +288,7 @@ function applyAutoref(){if(timer){clearInterval(timer);timer=null;}if(AUTOREF)ti
 function setHideip(on){HIDEIP=on;try{localStorage.setItem('vl-hideip',on?'1':'')}catch(e){}render();}
 
 document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.v));
-function go(v){VIEW=v;if(v==='log')OPLOG=null;if(v==='monitor')METRICS=null;
+function go(v){VIEW=v;if(v==='log')OPLOG=null;if(v==='monitor')METRICS=null;if(v==='settings'&&NOTIFY===null)loadNotify();
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.v===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='view-'+v));
   const T={overview:['总览','部署状态一眼概况'],servers:['服务器','接入的机器、指标、隧道'],projects:['项目','部署、历史、容器、转 git'],monitor:['监测','服务器指标 + 项目健康的历史趋势'],mcp:['MCP','让 AI 直接调用 vibe-launch'],log:['操作日志','所有改动型操作的审计流，便于追踪排查'],settings:['设置','外观、行为、关于']};
@@ -317,12 +317,15 @@ async function refreshAll(){const b=$('refBtn');if(b){b.disabled=true;b.textCont
     render();}
   finally{if(b){b.disabled=false;b.textContent='刷新';}}}
 function render(){({overview:rOverview,servers:rServers,projects:rProjects,monitor:rMonitor,mcp:rMcp,log:rLog,settings:rSettings}[VIEW]||rOverview)();}
-let OPLOG=null,ADV=[],METRICS=null;
+let OPLOG=null,ADV=[],METRICS=null,NOTIFY=null;
 async function loadOplog(){try{OPLOG=await api('/api/oplog?limit=150');}catch(e){OPLOG=[];}if(VIEW==='log')render();}
 async function loadAdvise(){try{ADV=await api('/api/advise');}catch(e){ADV=[];}if(VIEW==='overview')render();}
 function jumpProj(k){EXP.add('p:'+k);go('projects');}
 function jumpSrv(k){EXP.add('s:'+k);go('servers');loadCts(k);}
 async function loadMetrics(){try{METRICS=await api('/api/metrics?limit=900');}catch(e){METRICS=[];}if(VIEW==='monitor')render();}
+async function loadNotify(){try{const r=await api('/api/notify');NOTIFY=r.webhook||'';}catch(e){NOTIFY='';}if(VIEW==='settings')render();}
+async function saveWebhook(){const w=($('set_webhook').value||'').trim();try{await api('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({webhook:w})});NOTIFY=w;toast(w?'已保存，监测到问题会推送':'已关闭告警');}catch(e){toast(e.message,'err');}}
+async function testWebhook(){const w=($('set_webhook').value||'').trim();if(!w){toast('先填 webhook','err');return;}try{const r=await api('/api/notify/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({webhook:w})},15000);toast(r.ok?'已发送，去群里看收到没':('发送失败：'+(r.error||'?')),r.ok?'':'err');}catch(e){toast(e.message,'err');}}
 function rMonitor(){
   if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
   if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻），等一两分钟再来看趋势。</div>';return;}
@@ -628,6 +631,9 @@ function rSettings(){
   h+=row('自动刷新','定时拉取服务器指标与项目状态',sw(AUTOREF,'setAutoref'));
   if(AUTOREF)h+=row('刷新间隔','',seg([['15','15 秒'],['30','30 秒'],['60','60 秒']],String(AUTOREF_SEC),'setIntervalSec'));
   h+=row('隐藏服务器 IP','列表里打码，点击单独显示',sw(HIDEIP,'setHideip'));
+  h+='<h2 class="sec">告警通知</h2>';
+  h+=row('推送到群机器人','监测到问题（网站没响应/磁盘满/证书快过期…）自动推送到你的群。支持企业微信/飞书/钉钉/Discord/Slack 的群机器人 webhook。',
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="set_webhook" value="'+esc(NOTIFY||'')+'" placeholder="粘贴群机器人 webhook 地址（留空=关闭）" style="width:260px;padding:6px 10px;font-size:13px"><button class="sm" onclick="saveWebhook()">保存</button><button class="sm" onclick="testWebhook()">测试</button></div>');
   h+='<h2 class="sec">关于</h2>';
   h+=row('vibe-launch '+(CONFIG._version||''),'纯本地操作台 · 只监听 127.0.0.1 · 无账号','');
   h+=row('配置文件','<span class="cfgp">'+esc(CONFIG._path||'')+'</span>','');

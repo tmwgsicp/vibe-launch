@@ -5,6 +5,9 @@ import { getServerStats } from "./serverstats.js";
 import { status } from "./status.js";
 import { certDaysByProject } from "./cert.js";
 import { appendSamples, pruneOld, type Sample } from "./metrics.js";
+import { loadConfig } from "./config.js";
+import { advise } from "./advise.js";
+import { sendNotify } from "./notify.js";
 
 const pct = (used?: number, total?: number) =>
   total && used != null ? Math.round((used / total) * 100) : null;
@@ -71,6 +74,26 @@ export async function collectOnce(config: Config, now: number): Promise<Sample[]
   return samples;
 }
 
+// 告警去重：记住已推过的问题。key 把问题里的数字抹成 #（91%→92% 算同一条，不重复刷）。
+const notified = new Set<string>();
+const advKey = (target: string, problem: string) => target + "|" + problem.replace(/\d+/g, "#");
+
+/** 采完一轮后检查建议：新出现的“运行时问题”推 webhook；恢复了就从已推集合移除。配置类问题不推。 */
+async function notifyCheck(): Promise<void> {
+  let cfg;
+  try { cfg = loadConfig(); } catch { return; } // 现读，能拿到用户刚在设置里改的 webhook
+  const webhook = cfg.notify?.webhook;
+  if (!webhook) return;
+  const advs = advise(cfg).filter((a) => !a.problem.startsWith("配置：")); // 配置错不是运行时事故，别推
+  const cur = new Set(advs.map((a) => advKey(a.target, a.problem)));
+  for (const k of [...notified]) if (!cur.has(k)) notified.delete(k); // 已恢复
+  const fresh = advs.filter((a) => !notified.has(advKey(a.target, a.problem)));
+  if (!fresh.length) return;
+  for (const a of fresh) notified.add(advKey(a.target, a.problem));
+  const text = "⚠ vibe-launch 监测到问题：\n" + fresh.map((a) => `· ${a.target}：${a.problem}\n  → ${a.fix}`).join("\n");
+  await sendNotify(webhook, text).catch(() => {});
+}
+
 export interface CollectorHandle { stop: () => void; }
 
 /** 启动采集循环：立即采一次，之后每 intervalMs 采一次。onTick 收到每轮样本（用于日志/告警）。 */
@@ -82,6 +105,7 @@ export function startCollector(config: Config, intervalMs: number, onTick?: (s: 
     try {
       const s = await collectOnce(config, Date.now());
       onTick?.(s);
+      await notifyCheck(); // 采完就检查要不要告警
     } catch { /* 单轮失败不该中断循环 */ }
   };
   void tick(); // 立即采第一轮

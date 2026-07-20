@@ -71,6 +71,8 @@ export interface FrontendConfig {
 export interface Config {
   servers: Record<string, ServerConfig>;
   projects: Record<string, ProjectConfig>;
+  /** 告警：监测发现新问题时推到这个 webhook（企业微信/飞书/Discord/钉钉/通用）。纯本地，可选。 */
+  notify?: { webhook?: string };
 }
 
 export interface PreflightCheck {

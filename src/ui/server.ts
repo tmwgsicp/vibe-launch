@@ -24,6 +24,7 @@ import { setupProxy, applyProxy, removeProxy, listProxy } from "../core/proxy.js
 import { doctor, setDockerMirror } from "../core/doctor.js";
 import { lintConfig } from "../core/lint.js";
 import { advise } from "../core/advise.js";
+import { sendNotify } from "../core/notify.js";
 import { startCollector } from "../core/monitor.js";
 import { readSamples } from "../core/metrics.js";
 import { browseDirs, readProjectFile, writeProjectFile, writeProjectFileBase64, listProjectDir } from "../core/files.js";
@@ -211,6 +212,23 @@ export async function startUi(
       // 建议：监测/配置发现的问题 + 怎么办（从已采 metrics 分析，零额外 SSH）
       if (path === "/api/advise" && req.method === "GET") {
         return json(res, 200, advise(loadConfig()));
+      }
+      // 告警 webhook：读 / 存 / 测试
+      if (path === "/api/notify" && req.method === "GET") {
+        return json(res, 200, { webhook: loadConfig().notify?.webhook || "" });
+      }
+      if (path === "/api/notify" && req.method === "POST") {
+        const b = await readBody(req);
+        const c = loadConfig();
+        c.notify = { ...c.notify, webhook: (b.webhook || "").trim() || undefined };
+        saveConfig(c);
+        return json(res, 200, { ok: true });
+      }
+      if (path === "/api/notify/test" && req.method === "POST") {
+        const b = await readBody(req);
+        const wh = ((b.webhook || loadConfig().notify?.webhook || "") as string).trim();
+        if (!wh) return json(res, 400, { ok: false, error: "还没填 webhook" });
+        return json(res, 200, await sendNotify(wh, "vibe-launch 测试消息：告警通道已打通 ✅"));
       }
       // 操作日志（全量审计流：deploy/restart/rollback/env/run/proxy/接入/删容器…）
       if (path === "/api/oplog" && req.method === "GET") {

@@ -22,6 +22,7 @@ import { doctor, setDockerMirror } from "./core/doctor.js";
 import { lintConfig } from "./core/lint.js";
 import { advise } from "./core/advise.js";
 import { startCollector } from "./core/monitor.js";
+import { sendNotify } from "./core/notify.js";
 import { VERSION } from "./version.js";
 
 /** 终端二次确认（危险操作用）。非 TTY（脚本/管道）下默认拒绝，要跑就带 -y。 */
@@ -594,6 +595,28 @@ program
       console.log(`  ${t} 采 ${s.length} 样本${down.length ? "  ⚠ 连不上: " + down.join(",") : ""}${bad.length ? "  ⚠ 健康红: " + bad.join(",") : ""}`);
     });
     await new Promise(() => {}); // 常驻
+  });
+
+const notifyCmd = program.command("notify").description("告警 webhook：监测到问题自动推送（企业微信/飞书/Discord/钉钉/Slack）");
+notifyCmd
+  .command("set <webhook>")
+  .description("设置告警 webhook 地址（存进清单）")
+  .action((webhook: string) => {
+    const c = loadConfig();
+    c.notify = { ...c.notify, webhook };
+    const p = saveConfig(c);
+    console.log(`✅ 已设置告警 webhook（写入 ${p}）。监测到问题会自动推送。`);
+  });
+notifyCmd
+  .command("test")
+  .description("给已配的 webhook 发一条测试消息")
+  .option("--webhook <url>", "临时指定 webhook（不填用清单里的）")
+  .action(async (opts) => {
+    const wh = opts.webhook || cfg().notify?.webhook;
+    if (!wh) { console.error("还没配 webhook：vl notify set <url>，或加 --webhook"); process.exitCode = 1; return; }
+    const r = await sendNotify(wh, "vibe-launch 测试消息：告警通道已打通 ✅");
+    if (r.ok) console.log("✅ 已发送，去你的群里看看收到没");
+    else { console.error(`❌ 发送失败：${r.error}`); process.exitCode = 1; }
   });
 
 program
