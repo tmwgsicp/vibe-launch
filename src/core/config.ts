@@ -70,6 +70,28 @@ export function saveConfig(config: Config): string {
   return path;
 }
 
+/** 导出当前配置的原始文本（含服务器密码等敏感信息，妥善保管）。 */
+export function exportConfigText(): string {
+  return readFileSync(resolveConfigPath(), "utf8");
+}
+
+/** 从备份文本恢复配置：校验后写回，覆盖前把当前配置备份成 .vlbak。 */
+export function importConfigText(text: string): string {
+  let parsed: Config;
+  try { parsed = parse(text) as Config; } catch (e) { throw new Error(`备份不是合法 YAML：${(e as Error).message}`); }
+  if (!parsed || typeof parsed !== "object") throw new Error("备份内容为空或格式不对");
+  parsed.servers ??= {};
+  parsed.projects ??= {};
+  for (const [name, proj] of Object.entries(parsed.projects)) {
+    if (!proj?.server) throw new Error(`备份里项目 ${name} 缺 server`);
+    if (!parsed.servers[proj.server]) throw new Error(`备份里项目 ${name} 引用的 server "${proj.server}" 不存在`);
+    if (!proj.deploy) throw new Error(`备份里项目 ${name} 缺 deploy 命令`);
+  }
+  const path = getConfigPath();
+  if (existsSync(path)) { try { writeFileSync(path + ".vlbak", readFileSync(path)); } catch { /* 备份失败不阻断 */ } }
+  return saveConfig(parsed);
+}
+
 /** 登记一个项目（project add） */
 export function addProject(config: Config, name: string, proj: ProjectConfig): void {
   if (!proj.server) throw new Error("缺少 server");

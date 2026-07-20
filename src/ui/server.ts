@@ -4,7 +4,7 @@ import * as http from "node:http";
 import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { shQuote } from "../core/sh.js";
-import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject } from "../core/config.js";
+import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject, exportConfigText, importConfigText } from "../core/config.js";
 import { deploy } from "../core/deploy.js";
 import { status } from "../core/status.js";
 import { onboard, manualSnippet } from "../core/onboard.js";
@@ -212,6 +212,15 @@ export async function startUi(
       // 建议：监测/配置发现的问题 + 怎么办（从已采 metrics 分析，零额外 SSH）
       if (path === "/api/advise" && req.method === "GET") {
         return json(res, 200, advise(loadConfig()));
+      }
+      // 配置备份 / 恢复
+      if (path === "/api/config/export" && req.method === "GET") {
+        return json(res, 200, { text: exportConfigText() });
+      }
+      if (path === "/api/config/import" && req.method === "POST") {
+        const b = await readBody(req);
+        const p = importConfigText(b.text || "");
+        return json(res, 200, { ok: true, path: p });
       }
       // 告警 webhook：读 / 存 / 测试
       if (path === "/api/notify" && req.method === "GET") {
