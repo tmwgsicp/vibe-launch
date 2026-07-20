@@ -327,8 +327,8 @@ async function loadMetrics(){try{METRICS=await api('/api/metrics?limit=900');}ca
 async function loadNotify(){try{const r=await api('/api/notify');NOTIFY=r.webhook||'';}catch(e){NOTIFY='';}if(VIEW==='settings')render();}
 async function saveWebhook(){const w=($('set_webhook').value||'').trim();try{await api('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({webhook:w})});NOTIFY=w;toast(w?'已保存，监测到问题会推送':'已关闭告警');}catch(e){toast(e.message,'err');}}
 async function testWebhook(){const w=($('set_webhook').value||'').trim();if(!w){toast('先填 webhook','err');return;}try{const r=await api('/api/notify/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({webhook:w})},15000);toast(r.ok?'已发送，去群里看收到没':('发送失败：'+(r.error||'?')),r.ok?'':'err');}catch(e){toast(e.message,'err');}}
-async function exportCfg(){try{const r=await api('/api/config/export');const blob=new Blob([r.text],{type:'text/yaml'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='vibe-launch-backup.yaml';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast('已导出，含密码请妥善保管');}catch(e){toast(e.message,'err');}}
-function importCfg(){const i=document.createElement('input');i.type='file';i.accept='.yaml,.yml,.txt';i.onchange=async()=>{const f=i.files&&i.files[0];if(!f)return;if(!confirm('用这个备份覆盖当前配置？当前配置会先存成 .vlbak。'))return;const text=await f.text();try{await api('/api/config/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})},0);toast('已恢复，正在刷新');await refreshAll();}catch(e){toast('恢复失败：'+e.message,'err');}};i.click();}
+async function exportCfg(){try{const r=await api('/api/config/export');const blob=new Blob([r.text],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='vibe-launch-backup.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast('已完整备份（含 SSH 私钥），请妥善保管、别外传');}catch(e){toast(e.message,'err');}}
+function importCfg(){const i=document.createElement('input');i.type='file';i.accept='.json,.yaml,.yml,.txt';i.onchange=async()=>{const f=i.files&&i.files[0];if(!f)return;if(!confirm('用这个备份覆盖当前配置？当前配置会先存成 .vlbak。'))return;const text=await f.text();try{await api('/api/config/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})},0);toast('已恢复，正在刷新');await refreshAll();}catch(e){toast('恢复失败：'+e.message,'err');}};i.click();}
 function rMonitor(){
   if(METRICS===null){$('view-monitor').innerHTML='<div class="empty">加载中…</div>';loadMetrics();return;}
   if(!METRICS.length){$('view-monitor').innerHTML='<div class="empty">还没有监测样本。开着操作台会每分钟自动采一次（也可 <code>vl monitor</code> 常驻），等一两分钟再来看趋势。</div>';return;}
@@ -649,7 +649,7 @@ function rSettings(){
   h+=row('推送到群机器人','监测到问题（网站没响应/磁盘满/证书快过期…）自动推送到你的群。支持企业微信/飞书/钉钉/Discord/Slack 的群机器人 webhook。',
     '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input id="set_webhook" value="'+esc(NOTIFY||'')+'" placeholder="粘贴群机器人 webhook 地址（留空=关闭）" style="width:260px;padding:6px 10px;font-size:13px"><button class="sm" onclick="saveWebhook()">保存</button><button class="sm" onclick="testWebhook()">测试</button></div>');
   h+='<h2 class="sec">配置备份</h2>';
-  h+=row('备份 / 恢复','纯本地配置只存在这台电脑，建议导出保存，换电脑/重装可恢复。含服务器密码，妥善保管、别外传。',
+  h+=row('备份 / 恢复','完整备份 = 配置 + 连服务器的 SSH 私钥，换电脑/重装可直接恢复并连上。含私钥/密码，务必妥善保管、别外传。',
     '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" onclick="exportCfg()">导出备份</button><button class="sm" onclick="importCfg()">从备份恢复…</button></div>');
   h+='<h2 class="sec">关于</h2>';
   h+=row('vibe-launch '+(CONFIG._version||''),'纯本地操作台 · 只监听 127.0.0.1 · 无账号','');

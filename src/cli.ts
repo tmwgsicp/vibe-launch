@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline";
 import { dirname } from "node:path";
-import { loadConfig, saveConfig, addProject, removeProject, exportConfigText, importConfigText } from "./core/config.js";
+import { loadConfig, saveConfig, addProject, removeProject, exportBundle, importBundle } from "./core/config.js";
 import { readFileSync, writeFileSync } from "node:fs";
 import { deploy } from "./core/deploy.js";
 import { restart } from "./core/restart.js";
@@ -614,18 +614,18 @@ program
 const configCmd = program.command("config").description("配置备份/恢复（纯本地清单，防换电脑/重装丢失）");
 configCmd
   .command("export [file]")
-  .description("导出配置到文件（不填则打印到屏幕）。含服务器密码等，妥善保管、别外传")
+  .description("完整备份（配置 + SSH 密钥）到文件，换电脑可直接恢复。含私钥/密码，妥善保管、别外传")
   .action((file?: string) => {
-    const text = exportConfigText();
-    if (file) { writeFileSync(file, text); console.log(`✅ 已导出到 ${file}（含敏感信息，妥善保管）`); }
+    const text = exportBundle();
+    if (file) { writeFileSync(file, text); console.log(`✅ 已完整备份到 ${file}（含 SSH 私钥，妥善保管、别外传）`); }
     else process.stdout.write(text);
   });
 configCmd
   .command("import <file>")
-  .description("从备份文件恢复配置（覆盖前自动把当前配置备份成 .vlbak）")
+  .description("从备份恢复配置 + SSH 密钥（覆盖前自动把当前配置备份成 .vlbak）")
   .action((file: string) => {
-    const p = importConfigText(readFileSync(file, "utf8"));
-    console.log(`✅ 已从 ${file} 恢复 → ${p}（原配置备份在 ${p}.vlbak）`);
+    const p = importBundle(readFileSync(file, "utf8"));
+    console.log(`✅ 已从 ${file} 恢复配置与密钥 → ${p}（原配置备份在 ${p}.vlbak）`);
   });
 
 const notifyCmd = program.command("notify").description("告警 webhook：监测到问题自动推送（企业微信/飞书/Discord/钉钉/Slack）");

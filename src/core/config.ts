@@ -70,9 +70,48 @@ export function saveConfig(config: Config): string {
   return path;
 }
 
+function expandHome(p: string): string {
+  return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
+}
+
 /** 导出当前配置的原始文本（含服务器密码等敏感信息，妥善保管）。 */
 export function exportConfigText(): string {
   return readFileSync(resolveConfigPath(), "utf8");
+}
+
+/** 完整备份：配置 + 它引用到的 SSH 私钥/公钥（否则换电脑恢复后连不上服务器）。返回 JSON 文本。 */
+export function exportBundle(): string {
+  const configText = exportConfigText();
+  let cfg: Config;
+  try { cfg = loadConfig(); } catch { cfg = { servers: {}, projects: {} }; }
+  const refs = new Set<string>([MANAGED_KEY_REF]); // 自管的默认 key
+  for (const s of Object.values(cfg.servers)) if (s.identityFile) refs.add(s.identityFile);
+  const keys: Record<string, string> = {};
+  for (const ref of refs) {
+    for (const suffix of ["", ".pub"]) {
+      const abs = expandHome(ref) + suffix;
+      if (existsSync(abs)) { try { keys[ref + suffix] = readFileSync(abs).toString("base64"); } catch { /* 跳过 */ } }
+    }
+  }
+  return JSON.stringify({ _vlbackup: 1, config: configText, keys }, null, 2);
+}
+
+/** 恢复：认得完整备份(JSON, 含密钥)也认得旧的纯 yaml 配置。返回写入的配置路径。 */
+export function importBundle(text: string): string {
+  let b: { _vlbackup?: number; config?: string; keys?: Record<string, string> } | null = null;
+  try { b = JSON.parse(text); } catch { /* 不是 JSON，当纯 yaml */ }
+  if (b && b._vlbackup && typeof b.config === "string") {
+    const path = importConfigText(b.config);
+    for (const [ref, b64] of Object.entries(b.keys || {})) {
+      try {
+        const abs = expandHome(ref);
+        mkdirSync(dirname(abs), { recursive: true });
+        writeFileSync(abs, Buffer.from(b64, "base64"), { mode: ref.endsWith(".pub") ? 0o644 : 0o600 });
+      } catch { /* 单把 key 写失败不阻断 */ }
+    }
+    return path;
+  }
+  return importConfigText(text); // 兼容旧的纯 yaml
 }
 
 /** 从备份文本恢复配置：校验后写回，覆盖前把当前配置备份成 .vlbak。 */

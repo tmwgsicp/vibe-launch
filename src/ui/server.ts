@@ -4,7 +4,7 @@ import * as http from "node:http";
 import { execFile } from "node:child_process";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { shQuote } from "../core/sh.js";
-import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject, exportConfigText, importConfigText } from "../core/config.js";
+import { loadConfig, saveConfig, addProject, getConfigPath, updateServer, removeServer, updateProject, removeProject, exportBundle, importBundle } from "../core/config.js";
 import { deploy } from "../core/deploy.js";
 import { status } from "../core/status.js";
 import { onboard, manualSnippet } from "../core/onboard.js";
@@ -222,11 +222,11 @@ export async function startUi(
       }
       // 配置备份 / 恢复
       if (path === "/api/config/export" && req.method === "GET") {
-        return json(res, 200, { text: exportConfigText() });
+        return json(res, 200, { text: exportBundle() });
       }
       if (path === "/api/config/import" && req.method === "POST") {
         const b = await readBody(req);
-        const p = importConfigText(b.text || "");
+        const p = importBundle(b.text || "");
         return json(res, 200, { ok: true, path: p });
       }
       // 告警 webhook：读 / 存 / 测试
