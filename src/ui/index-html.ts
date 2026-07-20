@@ -341,27 +341,25 @@ function rMonitor(){
     return '<svg class="sl" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts.join(' ')+'" style="fill:none;stroke:var(--accent);stroke-width:1.4px;stroke-linejoin:round;stroke-linecap:round"/></svg>';};
   const nt=(v)=>v==null?'—':(v>=1?v.toFixed(1):v.toFixed(2))+'M';
   let h='<style>.sl{width:110px;height:22px;vertical-align:middle}.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:11px 2px;border-bottom:1px solid var(--line)}.mrow .nm{min-width:108px;font-weight:500}.mlab{color:var(--muted);font-size:12px}.mval{font-variant-numeric:tabular-nums;font-size:12.5px;min-width:40px;text-align:right}.upt{display:inline-flex;gap:2px;flex-wrap:wrap}.upt .dot{margin:0}</style>';
-  h+='<div class="dsub" style="margin:2px 0 8px">开着操作台每 60s 自动采一次（也可 <code>vl monitor</code> 常驻），落 ~/.vibe-launch/metrics/。这里只看<b>时间趋势</b> —— 当前值 / 详情在总览、服务器页。</div>';
+  h+='<div class="dsub" style="margin:2px 0 8px">看服务器和网站随时间的变化。<b>有问题会在「总览」页的“待处理”里用大白话提示 + 告诉你怎么办</b>，不用盯着这些数字。</div>';
   h+='<h2 class="sec">服务器 · 内存 / 磁盘趋势</h2>';
   for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
     h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="sp"></span>'
-      +'<span class="mlab">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
-      +'<span class="mlab" style="margin-left:8px">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)
-      +'<span class="mlab" style="margin-left:8px">inode</span>'+sl(a.map(x=>x.inodePct))+pv(l.inodePct)
-      +'<span class="mlab" style="margin-left:8px">Swap</span>'+sl(a.map(x=>x.swapPct))+pv(l.swapPct)
-      +'<span class="mlab" style="margin-left:8px">网络↓</span>'+slA(a.map(x=>x.netRx))+'<span class="mval" style="min-width:auto">'+nt(l.netRx)+' <span style="color:var(--faint)">↑'+nt(l.netTx)+'</span></span>'
-      +'<span class="mlab" style="margin-left:8px">连接</span><span class="mval" style="min-width:auto">'+(l.tcpConns!=null?l.tcpConns:'—')+'</span>'
+      +'<span class="mlab" title="应用占用的内存(RAM)，满了会变慢甚至崩溃">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
+      +'<span class="mlab" style="margin-left:10px" title="硬盘存储空间，满了就没法部署/写数据">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)
+      +'<span class="mlab" style="margin-left:10px" title="网速：↓收数据 ↑发数据">网速</span>'+slA(a.map(x=>x.netRx))+'<span class="mval" style="min-width:auto">↓'+nt(l.netRx)+' <span style="color:var(--faint)">↑'+nt(l.netTx)+'</span></span>'
+      +'<span class="mlab" style="margin-left:10px" title="当前有多少网络连接（访客/服务连着的）">连接</span><span class="mval" style="min-width:auto">'+(l.tcpConns!=null?l.tcpConns:'—')+'</span>'
       +'</div>';
   }
-  h+='<h2 class="sec">项目健康在线率 · 近 60 次采集</h2>';
+  h+='<h2 class="sec">网站在线率 · 这段时间正常的比例</h2>';
   for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-60);
     const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
     const rs=a.map(x=>x.restarts).filter(x=>x!=null);const rd=rs.length>=2?rs[rs.length-1]-rs[0]:0;
-    const flag=rd>0?'<span class="mval" style="color:var(--bad);min-width:auto" title="观察期内容器重启 +'+rd+' 次，疑似崩溃循环">↻ +'+rd+'</span>':'';
+    const flag=rd>0?'<span class="mval" style="color:var(--bad);min-width:auto" title="这段时间应用反复重启了 '+rd+' 次，可能一直在崩">反复重启 +'+rd+'</span>':'';
     const cd=(a.slice(-1)[0]||{}).certDays;
-    const cert=cd!=null?'<span class="mval" style="min-width:auto;color:'+(cd<=3?'var(--bad)':cd<=14?'var(--warn)':'var(--muted)')+'" title="HTTPS 证书剩余天数">证书 '+cd+'d</span>':'';
+    const cert=cd!=null?'<span class="mval" style="min-width:auto;color:'+(cd<=3?'var(--bad)':cd<=14?'var(--warn)':'var(--muted)')+'" title="HTTPS 安全证书还有几天过期（过期后浏览器会报“不安全”）">证书 '+cd+'天</span>':'';
     const strip=a.map(x=>'<span class="dot '+(x.reachable===false||x.healthOk===false?'bad':'ok')+'"></span>').join('');
-    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px">'+(rate!=null?rate+'% 在线':'—')+'</span>'+cert+flag+'<span class="sp"></span><span class="upt">'+strip+'</span></div>';
+    h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="mval" style="min-width:56px" title="这段时间里网站正常响应的比例">'+(rate!=null?rate+'% 在线':'—')+'</span>'+cert+flag+'<span class="sp"></span><span class="upt" title="每个点是一次检查：绿=正常，红=异常">'+strip+'</span></div>';
   }
   $('view-monitor').innerHTML=h;
 }
@@ -386,13 +384,14 @@ function isUp(st){return /running|up/i.test(st||'')||/^active$/i.test(st||'');}
 function rOverview(){
   const srv=CONFIG.servers||{},prj=CONFIG.projects||{},iss=[];
   Object.entries(STATS).forEach(([n,s])=>{if(!s||s.loading)return;if(!s.reachable){iss.push(n+' 连不上');return;}
-    if(s.load&&s.cores&&s.load[0]/s.cores>=.9)iss.push(n+' 负载 '+s.load[0]);
-    if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存满');
-    if(s.diskTotalMb&&s.diskUsedMb/s.diskTotalMb>=.9)iss.push(n+' 磁盘满');});
+    if(s.load&&s.cores&&s.load[0]/s.cores>=.9)iss.push(n+' CPU 很忙');
+    if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存快满了');
+    if(s.diskTotalMb&&s.diskUsedMb/s.diskTotalMb>=.9)iss.push(n+' 硬盘快满了');});
   Object.entries(STATUS).forEach(([k,s])=>{if(!s)return;if(!s.reachable){iss.push(k+' 连不上');return;}
-    (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' '+c.name+' '+c.state);});
-    (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 健康 '+h.httpCode);});});
-  let h=iss.length?'<div class="banner warn"><b>'+iss.length+' 项需注意</b> · '+iss.map(esc).join(' · ')+'</div>':'<div class="banner"><b>一切正常</b></div>';
+    (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' 的 '+c.name+' 没在运行');});
+    (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 没响应');});});
+  const nWarn=(ADV&&ADV.length)||iss.length;
+  let h=nWarn?'<div class="banner warn"><b>有 '+nWarn+' 项需要注意</b>'+((ADV&&ADV.length)?'（见下方“待处理”，每条都写了怎么办）':' · '+iss.map(esc).join(' · '))+'</div>':'<div class="banner"><b>一切正常</b></div>';
   // 建议：问题 + 怎么办 + 可点的工具（advise 已含配置 lint）
   if(ADV&&ADV.length){h+='<h2 class="sec">待处理 · '+ADV.length+' 项</h2><div class="list">';
     h+=ADV.map(a=>{const act=a.action;let btn='';
@@ -407,7 +406,7 @@ function rOverview(){
   h+=Object.keys(srv).map(n=>{const s=STATS[n];let m='';
     if(s&&s.loading)m='<span class="mt"><span class="spin"></span></span>';
     else if(s&&!s.reachable)m='<span class="st"><span class="dot bad"></span>连不上</span>';
-    else if(s){const p=[];if(s.load&&s.cores)p.push('<div class="mini">负载 '+mbar(s.load[0]/s.cores*100)+'</div>');
+    else if(s){const p=[];if(s.load&&s.cores)p.push('<div class="mini" title="CPU 繁忙程度">CPU '+mbar(s.load[0]/s.cores*100)+'</div>');
       if(s.memTotalMb)p.push('<div class="mini">内存 '+mbar(s.memUsedMb/s.memTotalMb*100)+'</div>');
       if(s.diskTotalMb)p.push('<div class="mini">磁盘 '+mbar(s.diskUsedMb/s.diskTotalMb*100)+'</div>');m=p.join('');}
     return '<div class="row" style="cursor:default"><span class="nm">'+esc(n)+'</span>'+m+'<span class="sp"></span><span class="mt">'+(s&&s.containersTotal!=null?'容器 '+s.containersRunning+'/'+s.containersTotal:'')+'</span></div>';
@@ -431,7 +430,7 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
   let mini='';
   if(s&&s.loading)mini='<span class="mt"><span class="spin"></span></span>';
   else if(s&&!s.reachable)mini='<span class="st"><span class="dot bad"></span>连不上</span>';
-  else if(s){const p=[];if(s.load&&s.cores)p.push('<div class="mini">负载 '+mbar(s.load[0]/s.cores*100)+'</div>');
+  else if(s){const p=[];if(s.load&&s.cores)p.push('<div class="mini" title="CPU 繁忙程度">CPU '+mbar(s.load[0]/s.cores*100)+'</div>');
     if(s.memTotalMb)p.push('<div class="mini">内存 '+mbar(s.memUsedMb/s.memTotalMb*100)+'</div>');
     if(s.diskTotalMb)p.push('<div class="mini">磁盘 '+mbar(s.diskUsedMb/s.diskTotalMb*100)+'</div>');mini=p.join('');}
   let row='<div class="row '+(op?'open':'')+'" onclick="toggle(\'s:'+esc(k)+'\')"><span class="nm">'+esc(k)+'</span>'
@@ -444,7 +443,7 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
     const mt=(k2,p,v2)=>'<div class="metric"><span class="k">'+k2+'</span>'+mbar(p)+'<span class="v">'+v2+'</span></div>';
     if(s.memTotalMb)d+=mt('内存',s.memUsedMb/s.memTotalMb*100,gb(s.memUsedMb)+' / '+gb(s.memTotalMb));
     if(s.diskTotalMb)d+=mt('磁盘',s.diskUsedMb/s.diskTotalMb*100,gb(s.diskUsedMb)+' / '+gb(s.diskTotalMb));
-    if(s.load&&s.cores)d+=mt('负载',s.load[0]/s.cores*100,s.load.join(' ')+' · '+s.cores+'核');
+    if(s.load&&s.cores)d+=mt('CPU',s.load[0]/s.cores*100,s.load.join(' ')+' · '+s.cores+'核');
     d+='</div></div>';
     const info=[];
     if(s.os)info.push(['系统',s.os]);

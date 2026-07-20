@@ -14,15 +14,15 @@ export function lintConfig(config: Config): LintIssue[] {
 
   for (const [name, p] of Object.entries(config.projects || {})) {
     if (p.dir && (/^[A-Za-z]:[\\/]/.test(p.dir) || p.dir.includes("\\")))
-      issues.push({ level: "error", target: name, message: `dir 像 Windows 路径（${p.dir}）—— 多半是 git-bash 路径转换坑，应改成 Linux 绝对路径（如 /root）` });
+      issues.push({ level: "error", target: name, message: `部署目录填成了 Windows 路径（${p.dir}）——应该填服务器上的路径，比如 /root` });
     else if (p.dir && !p.dir.startsWith("/"))
-      issues.push({ level: "warn", target: name, message: `dir 不是绝对路径（${p.dir}）` });
+      issues.push({ level: "warn", target: name, message: `部署目录不是服务器绝对路径（${p.dir}，应以 / 开头）` });
 
     const dep = (p.deploy || "").trim();
     if (!dep || /^(true|:|#)\s*$/.test(dep))
-      issues.push({ level: "warn", target: name, message: `deploy 是占位/空操作（${dep || "空"}），不会真正部署` });
+      issues.push({ level: "warn", target: name, message: `还没设置部署命令（现在是占位的“${dep || "空"}”，点部署不会真正上线）` });
     if (/git\s+(pull|fetch)/.test(dep) && !p.dir)
-      issues.push({ level: "warn", target: name, message: `deploy 里有 git pull 但没配 dir，cd 不进目录` });
+      issues.push({ level: "warn", target: name, message: `部署命令里有 git pull，但没填部署目录，会进不去目录` });
 
     if (p.frontend && (!p.frontend.dist || !p.frontend.target))
       issues.push({ level: "warn", target: name, message: `frontend 配了但缺 dist/target` });
