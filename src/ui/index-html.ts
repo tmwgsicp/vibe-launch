@@ -413,7 +413,7 @@ function rOverview(){
   }).join('')||'<div class="empty">还没有服务器</div>';
   h+='</div><h2 class="sec">项目</h2><div class="list">';
   h+=Object.keys(prj).map(k=>{const s=STATUS[k];let info='';
-    if(s&&s.reachable){const c=(s.containers||[]).map(x=>'<span class="dot '+(/running|up/i.test(x.state)?'ok':'bad')+'"></span>').join(' ');
+    if(s&&s.reachable){const c=(s.containers||[]).map(x=>'<span class="dot '+(isUp(x.state)?'ok':'bad')+'" title="'+esc(x.name+'：'+x.state)+'"></span>').join(' ');
       info='<span class="mini">'+c+'</span>';}
     return '<div class="row" style="cursor:default"><span class="nm">'+esc(k)+'</span><span class="mt">'+esc(prj[k].server)+'</span>'+info+'<span class="sp"></span>'+stDot(s)+'</div>';
   }).join('')||'<div class="empty">还没有项目</div>';
