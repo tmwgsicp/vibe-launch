@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 import { dirname } from "node:path";
 import { loadConfig, saveConfig, addProject, removeProject, exportBundle, importBundle } from "./core/config.js";
 import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { deploy } from "./core/deploy.js";
 import { restart } from "./core/restart.js";
 import { status } from "./core/status.js";
@@ -397,13 +398,21 @@ program
 
 program
   .command("setup-git <project>")
-  .description("把项目目录转成 git checkout：装 git + 生成 deploy key + 用 gh 自动加到 GitHub 仓库(只读) + 配好免密拉取")
+  .description("把项目目录转成 git checkout：装 git + 生成 deploy key + 加到 GitHub 仓库(只读) + 配好免密拉取")
   .requiredOption("--repo <owner/repo>", "GitHub 仓库（owner/repo 或完整 git URL）")
   .option("--branch <branch>", "分支", "main")
   .option("--adopt", "目录非空且非 git 时，先备份再转换（用仓库覆盖被跟踪文件，保留未跟踪文件）")
   .option("--gh <path>", "gh 可执行路径", "gh")
-  .option("--token <pat>", "GitHub PAT（替代 gh；需 repo / Administration:write 权限。也可设环境变量 GITHUB_TOKEN）")
+  .option("--token <pat>", "GitHub PAT（需 repo / Administration:write 权限。也可设环境变量 GITHUB_TOKEN）")
   .action(async (project: string, opts) => {
+    // 优化：既没 token 又没 gh 时，就地浏览器授权（device flow），就不用装 gh 了。有 gh 的走原路不打扰。
+    const hasToken = opts.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || getStoredToken();
+    const hasGh = (() => { try { execFileSync(opts.gh || "gh", ["--version"], { stdio: "ignore" }); return true; } catch { return false; } })();
+    if (!hasToken && !hasGh && process.stdin.isTTY) {
+      console.log("需要 GitHub 授权来把 deploy key 加到仓库（浏览器点一下即可，用完自动保存本地）…");
+      try { await deviceLogin(["repo"], (s) => console.log("  " + s)); }
+      catch (e) { console.error(`授权未完成：${(e as Error).message}（也可 --token 或装 gh 后重试）`); }
+    }
     console.log(`==> setup-git ${project}（仓库 ${opts.repo}）…`);
     const r = await setupGit(cfg(), {
       project,
