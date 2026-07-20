@@ -141,6 +141,7 @@ export async function startUi(
             { name: "check_network", desc: "网络体检：探 DockerHub/GitHub/npm 可达性 + DNS/证书（只读）" },
             { name: "get_oplog", desc: "看操作日志全量审计流（只读）" },
             { name: "run_command", desc: "在服务器跑任意命令，带 container 则 docker exec 进容器（AI 灵活部署的万能原语）" },
+            { name: "push_code", desc: "把本地代码文件夹上传到项目服务器目录（不用 git）" },
             { name: "suggest_deploy", desc: "探测项目类型，给出推荐壳子部署命令（脚手架）" },
           ],
           config: { mcpServers: { "vibe-launch": { command: "vibe-launch", args: ["mcp"] } } },

@@ -20,6 +20,7 @@ import { listContainers, getContainerLogs } from "./core/containers.js";
 import { enableSshPool, runOnServer } from "./core/ssh.js";
 import { suggestDeploy } from "./core/scaffold.js";
 import { dockerExecCmd } from "./core/run.js";
+import { pushCode } from "./core/push.js";
 import { VERSION } from "./version.js";
 
 function text(obj: unknown) {
@@ -252,6 +253,21 @@ export async function startMcp() {
       if (!c.servers[server]) return { ...text({ error: `服务器 ${server} 不存在` }), isError: true };
       try { return text(await suggestDeploy(c, server, dir, name || "app", port || 8080)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "push_code",
+    "把本地代码文件夹上传到项目的服务器目录（sftp，不用 git）。给不用 git/GitHub 的项目：AI 写好本地代码，用它推上服务器，之后 deploy_project 起服务。" +
+      "自动跳过 node_modules/.git/dist 等（服务器上由部署命令重装依赖）。localDir 不填则用项目 localSource 或当前目录。" +
+      "有副作用（覆盖服务器上同名文件），确认目的后再用。",
+    {
+      project: z.string().describe("项目名（需已配 dir 工作目录）"),
+      localDir: z.string().optional().describe("本地代码目录，不填则用项目 localSource 或当前目录"),
+    },
+    async ({ project, localDir }) => {
+      const r = await pushCode(loadConfig(), project, localDir);
+      return { ...text(r), isError: !r.success };
     }
   );
 
