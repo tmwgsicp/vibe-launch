@@ -1,6 +1,6 @@
 // 接入新服务器：自动配 SSH（装公钥，免密）+ 可选建部署用户 + 写进清单
 import { NodeSSH } from "node-ssh";
-import { readFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -8,6 +8,7 @@ import { loadConfig, saveConfig, MANAGED_KEY_REF } from "./config.js";
 import type { Config, ServerConfig } from "./types.js";
 import { shQuote } from "./sh.js";
 import { recordOp } from "./oplog.js";
+import { generateEd25519 } from "./keygen.js";
 
 function expandHome(p: string): string {
   return p.startsWith("~") ? join(homedir(), p.slice(1)) : p;
@@ -69,7 +70,15 @@ function ensureKeypair(identityFile: string, steps: string[]): string {
   if (!existsSync(priv)) {
     steps.push(`本地没有密钥，生成新的 ${identityFile}`);
     mkdirSync(dirname(priv), { recursive: true });
-    execFileSync("ssh-keygen", ["-t", "ed25519", "-f", priv, "-N", "", "-q"]);
+    try {
+      execFileSync("ssh-keygen", ["-t", "ed25519", "-f", priv, "-N", "", "-q"]);
+    } catch {
+      // 本机没有 ssh-keygen（纯 Windows 常见）：用 Node 内置生成，零外部依赖、跨平台
+      const { privatePem, publicLine } = generateEd25519("vibe-launch");
+      writeFileSync(priv, privatePem, { mode: 0o600 });
+      writeFileSync(pub, publicLine + "\n", { mode: 0o644 });
+      steps.push("（本机没有 ssh-keygen，已用内置方式生成密钥）");
+    }
   }
   if (!existsSync(pub)) throw new Error(`找不到公钥 ${pub}`);
   return readFileSync(pub, "utf8").trim();
