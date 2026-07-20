@@ -348,7 +348,6 @@ function rMonitor(){
       +'<span class="mlab" title="应用占用的内存(RAM)，满了会变慢甚至崩溃">内存</span>'+sl(a.map(x=>x.memPct))+pv(l.memPct)
       +'<span class="mlab" style="margin-left:10px" title="硬盘存储空间，满了就没法部署/写数据">磁盘</span>'+sl(a.map(x=>x.diskPct))+pv(l.diskPct)
       +'<span class="mlab" style="margin-left:10px" title="网速：↓收数据 ↑发数据">网速</span>'+slA(a.map(x=>x.netRx))+'<span class="mval" style="min-width:auto">↓'+nt(l.netRx)+' <span style="color:var(--faint)">↑'+nt(l.netTx)+'</span></span>'
-      +'<span class="mlab" style="margin-left:10px" title="当前有多少网络连接（访客/服务连着的）">连接</span><span class="mval" style="min-width:auto">'+(l.tcpConns!=null?l.tcpConns:'—')+'</span>'
       +'</div>';
   }
   h+='<h2 class="sec">项目 · 健康在线率</h2>';
