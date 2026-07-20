@@ -645,6 +645,20 @@ program
     await startMcp();
   });
 
+// 无子命令时给新手一个上手提示（而不是干巴巴的 help）
+program.action(() => {
+  console.log(
+    "vibe-launch —— 把项目部署到你的服务器（纯本地）\n\n" +
+      "新手推荐：先开可视化操作台，点点就能上手\n" +
+      "  vibe-launch ui\n\n" +
+      "或命令行三步：\n" +
+      '  1) vibe-launch server add prod --host <IP> --password <密码>\n' +
+      '  2) vibe-launch project add myapp --server prod --deploy "git pull && docker restart myapp"\n' +
+      "  3) vibe-launch deploy myapp\n\n" +
+      "全部命令：vibe-launch --help"
+  );
+});
+
 program.parseAsync().catch((e) => {
   console.error("错误:", (e as Error).message);
   process.exit(1);

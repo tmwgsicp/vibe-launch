@@ -387,6 +387,16 @@ function isUp(st){return /running|up/i.test(st||'')||/^active$/i.test(st||'');}
 /* ---- 总览：紧凑概况 ---- */
 function rOverview(){
   const srv=CONFIG.servers||{},prj=CONFIG.projects||{},iss=[];
+  // 全新用户：没接入任何服务器 → 三步引导，而不是空列表
+  if(!Object.keys(srv).length){
+    $('view-overview').innerHTML='<div style="max-width:640px"><div style="font-size:17px;font-weight:600;margin:8px 0 4px">欢迎 👋 三步把项目部署上线</div>'
+      +'<div class="sd" style="margin-bottom:18px;color:var(--muted)">vibe-launch 用你本地的 SSH 直连服务器，纯本地、无账号、无后端。</div>'
+      +'<div class="step"><div class="n">1</div><div><b>接入一台服务器</b><div class="td">填 IP + 密码，自动配好免密直连（拿不到密码可选“手动/扫码”）。<div style="margin-top:8px"><button class="primary sm" onclick="openServerDlg()">接入服务器</button></div></div></div></div>'
+      +'<div class="step"><div class="n">2</div><div><b>登记你的项目</b><div class="td">部署到哪台、用什么命令部署（如 <code>git pull && docker restart 你的容器</code>）。不确定命令？接入后在项目里用「探测部署方式」拿建议。</div></div></div>'
+      +'<div class="step"><div class="n">3</div><div><b>一键部署 + 自动看护</b><div class="td">点「部署」实时看输出 + 健康检查；之后监测/告警自动盯着，出问题推到你的群。</div></div></div>'
+      +'</div>';
+    return;
+  }
   Object.entries(STATS).forEach(([n,s])=>{if(!s||s.loading)return;if(!s.reachable){iss.push(n+' 连不上');return;}
     if(s.load&&s.cores&&s.load[0]/s.cores>=.9)iss.push(n+' CPU 繁忙');
     if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存将满');
@@ -420,7 +430,7 @@ function rOverview(){
     if(s&&s.reachable){const c=(s.containers||[]).map(x=>'<span class="dot '+(isUp(x.state)?'ok':'bad')+'" title="'+esc(x.name+'：'+x.state)+'"></span>').join(' ');
       info='<span class="mini">'+c+'</span>';}
     return '<div class="row" style="cursor:default"><span class="nm">'+esc(k)+'</span><span class="mt">'+esc(prj[k].server)+'</span>'+info+'<span class="sp"></span>'+stDot(s)+'</div>';
-  }).join('')||'<div class="empty">还没有项目</div>';
+  }).join('')||'<div class="empty" style="text-align:left;padding:20px 0">服务器接好了 👍 下一步：登记你要部署的项目。<div style="margin-top:8px"><button class="primary sm" onclick="openProjectDlg()">登记项目</button></div></div>';
   $('view-overview').innerHTML=h+'</div>';
 }
 
@@ -506,7 +516,7 @@ function srvRow(k){const v=CONFIG.servers[k],s=STATS[k],op=EXP.has('s:'+k);
 /* ---- 项目：列表 + 展开(部署/历史/容器/git) ---- */
 function rProjects(){
   const ks=Object.keys(CONFIG.projects||{});
-  if(!ks.length){$('view-projects').innerHTML='<div class="empty">还没有项目。点右上"登记项目"。</div>';return;}
+  if(!ks.length){$('view-projects').innerHTML='<div class="empty" style="text-align:left;padding:24px 0">还没有项目。<div style="margin-top:8px"><button class="primary sm" onclick="openProjectDlg()">登记项目</button></div><div class="sd" style="margin-top:10px;color:var(--muted)">登记后可一键部署、看状态、自动看护。还没接服务器？先去「服务器」页接入。</div></div>';return;}
   $('view-projects').innerHTML='<div class="list">'+ks.map(prjRow).join('')+'</div>';
 }
 function prjRow(k){const p=CONFIG.projects[k],s=STATUS[k],op=EXP.has('p:'+k);
