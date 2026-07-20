@@ -341,7 +341,7 @@ function rMonitor(){
     return '<svg class="sl" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts.join(' ')+'" style="fill:none;stroke:var(--accent);stroke-width:1.4px;stroke-linejoin:round;stroke-linecap:round"/></svg>';};
   const nt=(v)=>v==null?'—':(v>=1?v.toFixed(1):v.toFixed(2))+'M';
   let h='<style>.sl{width:110px;height:22px;vertical-align:middle}.mrow{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:11px 2px;border-bottom:1px solid var(--line)}.mrow .nm{min-width:108px;font-weight:500}.mlab{color:var(--muted);font-size:12px}.mval{font-variant-numeric:tabular-nums;font-size:12.5px;min-width:40px;text-align:right}.upt{display:inline-flex;gap:2px;flex-wrap:wrap}.upt .dot{margin:0}</style>';
-  h+='<div class="dsub" style="margin:2px 0 8px">看服务器和网站随时间的变化。<b>有问题会在「总览」页的“待处理”里用大白话提示 + 告诉你怎么办</b>，不用盯着这些数字。</div>';
+  h+='<div class="dsub" style="margin:2px 0 8px">服务器与网站的历史趋势。<b>出问题会在「总览」页的“待处理”里提示，并附上解决办法</b>，不用一直盯着这些数字。</div>';
   h+='<h2 class="sec">服务器 · 内存 / 磁盘趋势</h2>';
   for(const n of Object.keys(CONFIG.servers||{})){const a=by['server:'+n]||[];const l=a[a.length-1]||{};
     h+='<div class="mrow"><span class="nm">'+esc(n)+'</span><span class="sp"></span>'
@@ -351,7 +351,7 @@ function rMonitor(){
       +'<span class="mlab" style="margin-left:10px" title="当前有多少网络连接（访客/服务连着的）">连接</span><span class="mval" style="min-width:auto">'+(l.tcpConns!=null?l.tcpConns:'—')+'</span>'
       +'</div>';
   }
-  h+='<h2 class="sec">网站在线率 · 这段时间正常的比例</h2>';
+  h+='<h2 class="sec">项目 · 健康在线率</h2>';
   for(const n of Object.keys(CONFIG.projects||{})){const a=(by['project:'+n]||[]).slice(-60);
     const up=a.filter(x=>x.reachable!==false&&x.healthOk!==false).length,rate=a.length?Math.round(up/a.length*100):null;
     const rs=a.map(x=>x.restarts).filter(x=>x!=null);const rd=rs.length>=2?rs[rs.length-1]-rs[0]:0;
@@ -384,14 +384,14 @@ function isUp(st){return /running|up/i.test(st||'')||/^active$/i.test(st||'');}
 function rOverview(){
   const srv=CONFIG.servers||{},prj=CONFIG.projects||{},iss=[];
   Object.entries(STATS).forEach(([n,s])=>{if(!s||s.loading)return;if(!s.reachable){iss.push(n+' 连不上');return;}
-    if(s.load&&s.cores&&s.load[0]/s.cores>=.9)iss.push(n+' CPU 很忙');
-    if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存快满了');
-    if(s.diskTotalMb&&s.diskUsedMb/s.diskTotalMb>=.9)iss.push(n+' 硬盘快满了');});
+    if(s.load&&s.cores&&s.load[0]/s.cores>=.9)iss.push(n+' CPU 繁忙');
+    if(s.memTotalMb&&s.memUsedMb/s.memTotalMb>=.9)iss.push(n+' 内存将满');
+    if(s.diskTotalMb&&s.diskUsedMb/s.diskTotalMb>=.9)iss.push(n+' 磁盘将满');});
   Object.entries(STATUS).forEach(([k,s])=>{if(!s)return;if(!s.reachable){iss.push(k+' 连不上');return;}
-    (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' 的 '+c.name+' 没在运行');});
-    (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 没响应');});});
+    (s.containers||[]).forEach(c=>{if(!isUp(c.state))iss.push(k+' 的 '+c.name+' 未运行');});
+    (s.health||[]).forEach(h=>{if(!h.ok)iss.push(k+' 健康检查未通过');});});
   const nWarn=(ADV&&ADV.length)||iss.length;
-  let h=nWarn?'<div class="banner warn"><b>有 '+nWarn+' 项需要注意</b>'+((ADV&&ADV.length)?'（见下方“待处理”，每条都写了怎么办）':' · '+iss.map(esc).join(' · '))+'</div>':'<div class="banner"><b>一切正常</b></div>';
+  let h=nWarn?'<div class="banner warn"><b>有 '+nWarn+' 项需要注意</b>'+((ADV&&ADV.length)?'（见下方“待处理”，每条附解决办法）':' · '+iss.map(esc).join(' · '))+'</div>':'<div class="banner"><b>一切正常</b></div>';
   // 建议：问题 + 怎么办 + 可点的工具（advise 已含配置 lint）
   if(ADV&&ADV.length){h+='<h2 class="sec">待处理 · '+ADV.length+' 项</h2><div class="list">';
     h+=ADV.map(a=>{const act=a.action;let btn='';

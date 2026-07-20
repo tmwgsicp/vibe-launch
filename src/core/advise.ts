@@ -46,15 +46,15 @@ export function advise(config: Config): Advisory[] {
     const l = latest["server:" + name];
     if (!l) continue;
     if (l.reachable === false) {
-      adv.push({ level: "error", target: name, problem: "服务器连不上了", fix: "服务器可能宕机或网络不通，先体检看看", action: { kind: "doctor", label: "体检一下", server: name } });
+      adv.push({ level: "error", target: name, problem: "服务器连不上", fix: "可能宕机或网络不通，先体检看看", action: { kind: "doctor", label: "体检", server: name } });
       continue;
     }
     if (l.diskPct != null && l.diskPct >= 90)
-      adv.push({ level: l.diskPct >= 95 ? "error" : "warn", target: name, problem: `硬盘快满了（已用 ${l.diskPct}%）`, fix: "清理没用的旧 Docker 镜像/数据，或看看哪个目录最占地方", action: { kind: "cmd", label: "看谁占地方", server: name, cmd: "du -sh /* 2>/dev/null | sort -rh | head; docker system df" } });
+      adv.push({ level: l.diskPct >= 95 ? "error" : "warn", target: name, problem: `磁盘将满（已用 ${l.diskPct}%）`, fix: "清理无用的 Docker 镜像/数据，或排查大目录", action: { kind: "cmd", label: "排查大目录", server: name, cmd: "du -sh /* 2>/dev/null | sort -rh | head; docker system df" } });
     if (l.swapPct != null && l.swapPct >= 60)
-      adv.push({ level: "warn", target: name, problem: `内存快不够了（已动用虚拟内存 ${l.swapPct}%）`, fix: "看看哪个程序最吃内存；长期这样就该给服务器加内存了", action: { kind: "cmd", label: "看谁吃内存", server: name, cmd: "ps -eo pid,comm,%mem --sort=-%mem | head" } });
+      adv.push({ level: "warn", target: name, problem: `内存吃紧（Swap 虚拟内存已用 ${l.swapPct}%）`, fix: "排查吃内存的进程；长期偏高应给服务器加内存", action: { kind: "cmd", label: "看内存占用", server: name, cmd: "ps -eo pid,comm,%mem --sort=-%mem | head" } });
     if (l.inodePct != null && l.inodePct >= 90)
-      adv.push({ level: l.inodePct >= 95 ? "error" : "warn", target: name, problem: `文件数量快满了（${l.inodePct}%，和硬盘空间是两回事）`, fix: "清理小文件特别多的目录（常见：日志、缓存）", action: { kind: "cmd", label: "看哪最多文件", server: name, cmd: "for d in /var /home /tmp /opt /root; do printf '%s ' $d; find $d -xdev 2>/dev/null | wc -l; done | sort -k2 -rn" } });
+      adv.push({ level: l.inodePct >= 95 ? "error" : "warn", target: name, problem: `inode（文件数）将满（${l.inodePct}%，与磁盘空间无关）`, fix: "清理小文件很多的目录（如日志、缓存）", action: { kind: "cmd", label: "排查文件数", server: name, cmd: "for d in /var /home /tmp /opt /root; do printf '%s ' $d; find $d -xdev 2>/dev/null | wc -l; done | sort -k2 -rn" } });
   }
 
   for (const name of Object.keys(config.projects || {})) {
@@ -68,21 +68,21 @@ export function advise(config: Config): Advisory[] {
       : { kind: "cmd" as const, label: "看服务日志", server, cmd: `journalctl -u ${firstService(p.restartCmd || p.deploy) || "你的服务"} -n 80 --no-pager` };
 
     if (l.reachable === false) {
-      adv.push({ level: "error", target: name, problem: "网站连不上了", fix: "所在服务器可能宕机了", action: { kind: "doctor", label: "体检一下", server } });
+      adv.push({ level: "error", target: name, problem: "项目连不上", fix: "所在服务器可能宕机", action: { kind: "doctor", label: "体检", server } });
       continue;
     }
     if (l.healthOk === false)
-      adv.push({ level: "error", target: name, problem: "网站没响应了", fix: "多半是应用崩了或连不上数据库，看日志找原因", action: logsAction });
+      adv.push({ level: "error", target: name, problem: "健康检查未通过（网站没响应）", fix: "多半是应用退出或连不上依赖，看日志定位", action: logsAction });
 
     const h = hist["project:" + name] || [];
     const rs = h.map((x) => x.restarts).filter((x): x is number => x != null);
     const rd = rs.length >= 2 ? rs[rs.length - 1] - rs[0] : 0;
     if (rd > 0)
-      adv.push({ level: "warn", target: name, problem: `应用反复重启了 ${rd} 次（可能一直在崩）`, fix: "看日志找它为什么一直崩", action: logsAction });
+      adv.push({ level: "warn", target: name, problem: `容器反复重启 ${rd} 次（疑似崩溃循环）`, fix: "看日志找反复崩溃的原因", action: logsAction });
 
     if (l.certDays != null && l.certDays <= 14) {
       const d0 = p.proxy?.domain?.trim().split(/[\s,]+/)[0] || "域名";
-      adv.push({ level: l.certDays <= 3 ? "error" : "warn", target: name, problem: l.certDays < 0 ? "网站的 HTTPS 证书过期了（浏览器会报“不安全”）" : `HTTPS 证书还有 ${l.certDays} 天过期`, fix: "vibe-launch 装的 Caddy 会自动续、不用管；否则去你的域名/证书服务商那儿续一下", action: { kind: "cmd", label: "看证书", server, cmd: `echo | openssl s_client -servername ${d0} -connect ${d0}:443 2>/dev/null | openssl x509 -noout -dates` } });
+      adv.push({ level: l.certDays <= 3 ? "error" : "warn", target: name, problem: l.certDays < 0 ? "HTTPS 证书已过期（浏览器会报“不安全”）" : `HTTPS 证书还有 ${l.certDays} 天过期`, fix: "vibe-launch 装的 Caddy 会自动续；否则在证书服务商/面板续签", action: { kind: "cmd", label: "看证书", server, cmd: `echo | openssl s_client -servername ${d0} -connect ${d0}:443 2>/dev/null | openssl x509 -noout -dates` } });
     }
   }
 
