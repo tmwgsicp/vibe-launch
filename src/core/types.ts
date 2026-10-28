@@ -44,17 +44,20 @@ export interface ProjectConfig {
   envFile?: string;
   /** 本地代码目录：`vl push` / UI「推送本地代码」默认从这里上传到服务器 dir（给不用 git 的场景）。 */
   localSource?: string;
-  /** 反代（vl proxy）：声明"域名 → 上游"，vibe-launch 生成 Caddy 站点块 + reload。裸机 Caddy 独占 80/443。 */
+  /** 反代（vl proxy）：声明"域名 → 上游"。裸机用 Caddy；已有 1Panel OpenResty 的机器直接写进它的 conf.d。 */
   proxy?: ProxyConfig;
 }
 
 export interface ProxyConfig {
-  /** 对外域名，如 app.example.com；多个用空格分隔（Caddy 站点地址原生支持）。 */
+  /** 对外域名，如 app.example.com；多个用空格分隔。 */
   domain: string;
   /** 上游地址（vibe-launch 反代到这里），host:port，如 127.0.0.1:8000。 */
   upstream: string;
-  /** 自动 HTTPS：true(默认)则 Caddy 自动签发/续期 Let's Encrypt 证书；false 则只听 http。 */
+  /** HTTPS：true(默认)；false 则只听 http。 */
   tls?: boolean;
+  /** 用已存到服务器的证书（vl proxy cert add 的名字），如 Cloudflare 源站证书。
+   *  不填：Caddy 自动签 Let's Encrypt；1Panel OpenResty 机器必须填。 */
+  cert?: string;
 }
 
 export interface FrontendConfig {

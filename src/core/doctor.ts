@@ -182,3 +182,94 @@ export async function setDockerMirror(
     return res;
   }
 }
+
+export interface DockerInstallResult {
+  server: string;
+  /** 实际走的安装源：already（本来就有）/ official（get.docker.com）/ aliyun（阿里云 docker-ce 镜像源） */
+  source: "already" | "official" | "aliyun" | "";
+  os: string;
+  version: string;
+  running: boolean;
+  success: boolean;
+  error?: string;
+}
+
+/** 装 Docker（含 compose 插件）：已装则跳过。download.docker.com 通就走官方 get.docker.com，
+ *  不通（国内常见）或指定 aliyun 则直接配阿里云 docker-ce 源装。会改系统包源，调用方负责二次确认。 */
+export async function installDocker(
+  config: Config,
+  target: string,
+  opts: { mirror?: "auto" | "official" | "aliyun" } = {}
+): Promise<DockerInstallResult> {
+  const server = getServerOf(config, target);
+  const res: DockerInstallResult = { server: target, source: "", os: "", version: "", running: false, success: false };
+  try {
+    const S = await sudoPrefix(server);
+    const r = await runOnServer(server, installDockerScript(S, opts.mirror || "auto"), undefined, 900000);
+    const get = (k: string) => r.stdout.split("\n").find((l) => l.startsWith(k + "|"))?.slice(k.length + 1).trim() || "";
+    res.os = get("OS");
+    if (r.stdout.includes("ALREADY|")) {
+      res.source = "already";
+      res.version = get("ALREADY");
+    } else if (r.stdout.includes("INSTALLED|")) {
+      res.source = get("SOURCE") as DockerInstallResult["source"];
+      res.version = get("INSTALLED");
+    } else {
+      const diag = r.stdout.split("FAILED")[1]?.trim() || r.stderr.trim();
+      throw new Error(`安装 Docker 失败（${res.os || "未知系统"}）。\n── 服务器诊断 ──\n${diag.slice(-1500)}`);
+    }
+    res.running = r.stdout.includes("\nRUNNING");
+    res.success = true;
+    if (res.source !== "already") recordOp("docker-install", target, true, `${res.source} ${res.version}`);
+    return res;
+  } catch (e) {
+    res.error = (e as Error).message;
+    recordOp("docker-install", target, false, res.error);
+    return res;
+  }
+}
+
+/** 装 Docker 的服务器脚本。日志收进 /tmp/vl-docker-install.log，失败时回吐尾部。
+ *  阿里云源覆盖 Debian/Ubuntu 与 CentOS 系；Alibaba Cloud Linux / Anolis / OpenCloudOS 等兼容发行版
+ *  按 EL8（Alibaba Cloud Linux 2 按 EL7）取包。 */
+export function installDockerScript(S: string, mirror: "auto" | "official" | "aliyun"): string {
+  const AL = "https://mirrors.aliyun.com/docker-ce";
+  const PKGS = "docker-ce docker-ce-cli containerd.io docker-compose-plugin";
+  return [
+    `L=/tmp/vl-docker-install.log; : > "$L"`,
+    `. /etc/os-release 2>/dev/null; echo "OS|$ID $VERSION_ID"`,
+    `if command -v docker >/dev/null 2>&1; then echo "ALREADY|$(docker --version)"; ${S}docker info >/dev/null 2>&1 && echo RUNNING; exit 0; fi`,
+    `M=${mirror}`,
+    `if [ "$M" = auto ]; then`,
+    `  c=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 15 https://download.docker.com 2>>"$L" || echo 000)`,
+    `  echo "download.docker.com -> $c" >>"$L"; case "$c" in 2*|3*) M=official;; *) M=aliyun;; esac`,
+    `fi`,
+    `if [ "$M" = official ]; then`,
+    `  echo "== get.docker.com ==" >>"$L"`,
+    `  curl -fsSL --connect-timeout 10 --max-time 120 https://get.docker.com -o /tmp/get-docker.sh >>"$L" 2>&1 && ${S}sh /tmp/get-docker.sh >>"$L" 2>&1`,
+    `  rm -f /tmp/get-docker.sh`,
+    `  command -v docker >/dev/null 2>&1 || M=aliyun`,
+    `fi`,
+    `if [ "$M" = aliyun ] && ! command -v docker >/dev/null 2>&1; then`,
+    `  echo "== 阿里云 docker-ce 源 ==" >>"$L"`,
+    `  case "$ID" in`,
+    `  ubuntu|debian)`,
+    `    { ${S}apt-get update -qq && ${S}apt-get install -y -qq ca-certificates curl gnupg && ${S}install -m 0755 -d /etc/apt/keyrings && ` +
+      `curl -fsSL ${AL}/linux/$ID/gpg | ${S}gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg && ` +
+      `echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${AL}/linux/$ID $VERSION_CODENAME stable" | ${S}tee /etc/apt/sources.list.d/docker.list >/dev/null && ` +
+      `${S}apt-get update -qq && ${S}apt-get install -y -qq ${PKGS}; } >>"$L" 2>&1 ;;`,
+    `  centos|rhel|rocky|almalinux|ol|alinux|anolis|opencloudos|tencentos|kylin)`,
+    `    PM=yum; command -v dnf >/dev/null 2>&1 && PM=dnf`,
+    `    { curl -fsSL ${AL}/linux/centos/docker-ce.repo | ${S}tee /etc/yum.repos.d/docker-ce.repo >/dev/null && ` +
+      `case "$ID" in centos|rhel|rocky|almalinux|ol) ;; alinux) [ "\${VERSION_ID%%.*}" = 2 ] && RV=7 || RV=8; ${S}sed -i 's/[$]releasever/'"$RV"'/g' /etc/yum.repos.d/docker-ce.repo ;; ` +
+      `*) ${S}sed -i 's/[$]releasever/8/g' /etc/yum.repos.d/docker-ce.repo ;; esac && ` +
+      `${S}$PM install -y ${PKGS}; } >>"$L" 2>&1 ;;`,
+    `  *) echo "不认识的发行版 $ID，请手动安装 Docker" >>"$L" ;;`,
+    `  esac`,
+    `fi`,
+    `if ! command -v docker >/dev/null 2>&1; then echo FAILED; tail -40 "$L"; exit 0; fi`,
+    `command -v systemctl >/dev/null 2>&1 && ${S}systemctl enable --now docker >>"$L" 2>&1`,
+    `echo "SOURCE|$M"; echo "INSTALLED|$(docker --version)"`,
+    `${S}docker info >/dev/null 2>&1 && echo RUNNING; true`,
+  ].join("\n");
+}

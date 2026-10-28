@@ -18,9 +18,9 @@ import { rollback } from "./core/rollback.js";
 import { deployFrontend } from "./core/frontend.js";
 import { setEnv } from "./core/env.js";
 import { watch } from "./core/watch.js";
-import { setupProxy, applyProxy, removeProxy, listProxy } from "./core/proxy.js";
+import { setupProxy, applyProxy, removeProxy, listProxy, addCert, listCerts } from "./core/proxy.js";
 import { readOps } from "./core/oplog.js";
-import { doctor, setDockerMirror } from "./core/doctor.js";
+import { doctor, setDockerMirror, installDocker } from "./core/doctor.js";
 import { lintConfig } from "./core/lint.js";
 import { advise } from "./core/advise.js";
 import { startCollector } from "./core/monitor.js";
@@ -349,11 +349,12 @@ projectCmd
   .option("--restart-cmd <cmd>", "非容器项目(systemd/裸进程)的重启命令，如 'sudo systemctl restart my-svc'")
   .option("--proxy-domain <domain>", "反代域名（配了则登记 proxy 段，之后 vl proxy apply 生效）")
   .option("--proxy-upstream <host:port>", "反代上游，如 127.0.0.1:8000（与 --proxy-domain 一起用）")
+  .option("--proxy-cert <name>", "反代用的证书名（vl proxy cert add 存的，如 Cloudflare 源站证书）")
   .action((name: string, opts) => {
     const c = loadConfig();
     const split = (s?: string) => (s ? s.split(",").map((x) => x.trim()).filter(Boolean) : undefined);
     const proxy = opts.proxyDomain
-      ? { domain: opts.proxyDomain, upstream: opts.proxyUpstream || "127.0.0.1:8000" }
+      ? { domain: opts.proxyDomain, upstream: opts.proxyUpstream || "127.0.0.1:8000", cert: opts.proxyCert }
       : undefined;
     addProject(c, name, {
       server: opts.server,
@@ -485,10 +486,10 @@ program
     });
   });
 
-const proxyCmd = program.command("proxy").description("反代（Caddy）：装 + 接线 + 声明式站点（域名→上游）");
+const proxyCmd = program.command("proxy").description("反代：声明式站点（域名→上游）。裸机用 Caddy，已有 1Panel 则写进它的 OpenResty");
 proxyCmd
   .command("setup <server>")
-  .description("在服务器装 Caddy + 接线（Caddyfile import）+ 起服务；检测 80/443 冲突")
+  .description("准备反代：已有 1Panel OpenResty 只做识别；否则装 Caddy + 接线 + 起服务，并检测 80/443 冲突")
   .option("--caddy-url <url>", "自定义 Caddy 下载地址（国内可指镜像绕开被墙；也可用环境变量 VL_CADDY_URL）")
   .action(async (server: string, opts) => {
     console.log(`==> proxy setup ${server} …`);
@@ -499,7 +500,7 @@ proxyCmd
   });
 proxyCmd
   .command("apply <project>")
-  .description("把项目 proxy 段（域名→上游）生成 Caddy 站点块并 reload 生效")
+  .description("把项目 proxy 段（域名→上游）写成站点配置，校验通过后 reload 生效（失败自动回滚）")
   .action(async (project: string) => {
     console.log(`==> proxy apply ${project} …`);
     const r = await applyProxy(cfg(), project);
@@ -509,7 +510,7 @@ proxyCmd
   });
 proxyCmd
   .command("rm <project>")
-  .description("删掉项目的 Caddy 站点块并 reload")
+  .description("删掉项目的站点配置并 reload")
   .action(async (project: string) => {
     const r = await removeProxy(cfg(), project);
     for (const s of r.steps) console.log(`  ${s}`);
@@ -517,7 +518,7 @@ proxyCmd
   });
 proxyCmd
   .command("ls <server>")
-  .description("列出该服务器上 vibe-launch 管理的站点块")
+  .description("列出该服务器上 vibe-launch 管理的站点配置")
   .action(async (server: string) => {
     const sites = await listProxy(cfg(), server);
     if (!sites.length) { console.log("（无 vibe-launch 管理的站点块）"); return; }
@@ -525,6 +526,47 @@ proxyCmd
       console.log(`# ${s.project}`);
       console.log(s.content.split("\n").map((l) => "  " + l).join("\n"));
     }
+  });
+
+const certCmd = proxyCmd.command("cert").description("反代证书（如 Cloudflare 源站证书）：存到服务器，项目用 proxy.cert 引用");
+certCmd
+  .command("add <server> <name>")
+  .description("存一张证书到服务器（本地 PEM 文件，或服务器上已有的证书目录）")
+  .option("--cert <file>", "本地证书文件（PEM，含完整链）")
+  .option("--key <file>", "本地私钥文件（PEM）")
+  .option("--from <dir>", "服务器上已有的目录（含 fullchain.pem + privkey.pem，如 1Panel 站点的 ssl 目录）")
+  .action(async (server: string, name: string, opts) => {
+    const r = await addCert(cfg(), server, name, { certFile: opts.cert, keyFile: opts.key, fromDir: opts.from });
+    for (const s of r.steps) console.log(`  ${s}`);
+    if (!r.success) { console.error(`❌ ${r.error}`); process.exitCode = 1; }
+  });
+certCmd
+  .command("ls <server>")
+  .description("列出服务器上 vibe-launch 存的证书和到期时间")
+  .action(async (server: string) => {
+    const certs = await listCerts(cfg(), server);
+    if (!certs.length) { console.log("（还没有存证书）"); return; }
+    for (const c of certs) console.log(`  ${c.name.padEnd(20)} ${c.info}`);
+  });
+
+program
+  .command("docker-install <server>")
+  .description("给服务器装 Docker（含 compose 插件）；国内连不上官方源会自动改用阿里云源")
+  .option("--mirror <src>", "安装源：auto（默认，自动判断）/ official / aliyun", "auto")
+  .option("-y, --yes", "跳过二次确认")
+  .action(async (server: string, opts) => {
+    if (!["auto", "official", "aliyun"].includes(opts.mirror)) { console.error(`❌ --mirror 只能是 auto / official / aliyun`); process.exitCode = 1; return; }
+    if (!opts.yes) {
+      const ok = await confirm(`确认给 ${server} 装 Docker？会添加 Docker 软件源并安装系统包（已装则跳过）[y/N] `);
+      if (!ok) { console.log("已取消（非交互环境请加 -y）"); return; }
+    }
+    console.log(`==> 安装 Docker ${server} …（可能要几分钟）`);
+    const r = await installDocker(cfg(), server, { mirror: opts.mirror });
+    if (!r.success) { console.error(`❌ ${r.error}`); process.exitCode = 1; return; }
+    const src = { already: "本来就装了", official: "官方源", aliyun: "阿里云源", "": "" }[r.source];
+    console.log(`✅ ${r.version}（${r.os}，${src}）`);
+    if (!r.running) console.log("   ⚠ docker 服务没在运行，检查 systemctl status docker");
+    if (r.source !== "already") console.log(`   国内机器拉镜像慢的话：vl doctor ${server}，再 vl docker-mirror ${server}`);
   });
 
 program

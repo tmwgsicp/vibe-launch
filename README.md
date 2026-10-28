@@ -46,6 +46,9 @@ AI 帮你把项目写完了，但**部署上线**还是一道坎：
 - 📥 **git 部署闭环** —— 一条命令把服务器目录转成 git checkout + 自动配只读 deploy key，之后 `git pull` 部署
 - 🖥️ **可视化操作台** —— 状态 / 部署 / 回滚 / 实时日志 / 端口检测 / 文件管理，纯本地浏览器里点
 - 🔒 **安全隧道** —— 内网 PG / Redis 映射到本地，公网 DB 端口可彻底关闭
+- 🧭 **新项目识别** —— `suggest` 探测服务器上项目的类型（VitePress / Nuxt / Next / Python / Node / 静态页 / Dockerfile），给出推荐部署命令 + 端口 + 健康检查
+- 🌐 **反代 + HTTPS** —— 项目配置里写「域名 → 上游」即生效。裸机自动装 Caddy；已有 1Panel 的服务器直接写进它的 OpenResty，不抢端口。证书可自动签，也可用 Cloudflare 源站证书
+- 🐳 **装 Docker + 国内网络体检** —— `docker-install` 一条命令装好 Docker（官方源不通自动换阿里云源）；`doctor` 探 Docker Hub / GitHub / npm / PyPI 可达性，`docker-mirror` 配镜像加速
 - 🌍 **跨发行版** —— 指标采集只依赖 procfs + POSIX，CentOS 7 老到 git 1.8 也兼容
 
 ## 📦 安装
@@ -74,6 +77,60 @@ vibe-launch deploy myapp
 vibe-launch status
 vibe-launch restart myapp     # 只重启容器 + 健康检查，不拉代码
 ```
+
+## 🆕 新项目第一次上线
+
+服务器上还没跑过这个项目时：
+
+```bash
+# 0. 新服务器先装 Docker（已装会跳过）
+vibe-launch docker-install prod
+
+# 1. 让服务器能拉代码（见下文「让项目用 git 部署」）
+vibe-launch project add myapp --server prod --dir /opt/myapp --deploy "git pull"
+vibe-launch setup-git myapp --repo yourname/yourrepo
+
+# 2. 识别项目类型，给出推荐的部署命令 / 端口 / 健康检查
+vibe-launch suggest prod /opt/myapp --name myapp --port 8080
+
+# 3. 用推荐命令重新登记，顺带登记域名，然后部署
+vibe-launch project add myapp --server prod --dir /opt/myapp \
+  --deploy "<suggest 给出的命令>" --containers myapp --health http://127.0.0.1:8080/ \
+  --proxy-domain app.example.com --proxy-upstream 127.0.0.1:8080
+vibe-launch deploy myapp
+
+# 4. 域名接到项目上
+vibe-launch proxy setup prod     # 每台服务器一次：识别 1Panel，或装 Caddy + 接线
+vibe-launch proxy apply myapp    # 写站点配置 → 校验 → reload（校验不过自动回滚）
+```
+
+国内服务器先跑 `vibe-launch doctor prod` 看网络，拉镜像失败用 `vibe-launch docker-mirror prod`。
+
+### 反代用哪个、证书怎么来
+
+`proxy` 按服务器现状自动选，不用你判断：
+
+| 服务器现状 | vibe-launch 怎么做 | HTTPS 证书 |
+|---|---|---|
+| 80/443 空闲 | 装 Caddy，每个项目一个站点块 | 默认自动签 Let's Encrypt；也可用自带证书 |
+| 已装 1Panel（OpenResty 占着 80/443） | 不装 Caddy，把站点写进 1Panel 的 `conf.d/vl-<项目>.conf` | 必须用自带证书 |
+| 80/443 被别的程序占着 | `proxy setup` 直接停下，不装、不抢端口 | — |
+
+**用 Cloudflare 源站证书**（域名开了橙色云朵时推荐）：在 Cloudflare 后台「SSL/TLS → 源服务器」创建证书，存成两个文件，然后：
+
+```bash
+vibe-launch proxy cert add prod my-origin --cert origin.pem --key origin.key
+# 服务器上已经有现成的证书目录（比如 1Panel 站点的 ssl 目录）也可以直接复用：
+# vibe-launch proxy cert add prod my-origin --from /opt/1panel/apps/openresty/openresty/www/sites/xxx/ssl
+# （Windows 的 Git Bash 会把 /opt/... 改写成本机路径，命令前加 MSYS_NO_PATHCONV=1，或改用 PowerShell）
+vibe-launch project add myapp ... --proxy-cert my-origin
+vibe-launch proxy apply myapp
+vibe-launch proxy cert ls prod   # 看已存的证书和到期时间
+```
+
+> ⚠️ 域名走 Cloudflare 代理（橙色云朵）、SSL 设为「完全（严格）」时，Caddy 自动签 Let's Encrypt 的首签可能不通，所以这种情况建议直接用源站证书。
+>
+> 写进 1Panel 的站点不会出现在 1Panel 面板的网站列表里，用 `vibe-launch proxy ls prod` 查看、`proxy rm` 下线。同一个域名已在 1Panel 里建过站点时，`apply` 会拒绝，避免两个配置抢一个域名。
 
 ## 🛠 复杂运维：从"手搓 SSH"收进 vl
 
@@ -121,7 +178,7 @@ vibe-launch ui          # 起本地操作台 + 自动开浏览器（localhost:77
 - **隧道** —— 界面里一键开 PG / Redis 隧道、管理活跃隧道
 - **文件** —— 项目目录 / 服务器任意路径浏览，`.env` 等配置在线编辑（存前自动备份）、二进制上传下载
 
-> 重活（容器编排、数据库、反代、防火墙全功能、Web 终端）是 1Panel 的地盘 —— vibe-launch 只做**部署闭环 + 「看比说高效」的可视化**，不做又一个服务器面板。
+> 重活（容器编排、数据库管理、防火墙全功能、Web 终端）是 1Panel 的地盘 —— vibe-launch 只做**部署闭环 + 声明式反代 + 「看比说高效」的可视化**，不做又一个服务器面板。
 
 ## 🤖 给 AI 工具用（MCP）
 
@@ -131,7 +188,7 @@ vibe-launch ui          # 起本地操作台 + 自动开浏览器（localhost:77
 vibe-launch mcp
 ```
 
-在 Claude Code / Cursor 里配置后，对它说 **「部署 myapp」**，它会调用 `deploy_project` 工具完成。
+在 Claude Code / Codex / Cursor 里配置后，对它说 **「部署 myapp」**，它会调用 `deploy_project` 工具完成；新项目也可以直接说「把 yourname/yourrepo 部署到 prod」，它会先用 `suggest_deploy` 识别项目再登记部署。
 
 ```json
 {
@@ -145,12 +202,18 @@ vibe-launch mcp
 |---|---|
 | `server add` | `onboard_server` |
 | `project add` | `add_project` |
+| `suggest <服务器> <目录>` | `suggest_deploy` |
 | `setup-git <项目>` | `setup_git` |
+| `push <项目>` | `push_code`（没有 git 仓库时，把本地代码上传到服务器） |
 | `deploy <项目>` | `deploy_project` |
 | `restart <项目>` | `restart_project` |
+| `run <项目> <命令>` | `run_command` |
+| `docker-install <服务器>` | `install_docker` |
+| `proxy apply <项目>` | `apply_proxy`（可顺带传域名 / 上游 / 证书名） |
 | `status [项目]` | `get_status` |
+| `ls` | `list_projects` |
 
-外加 6 个**只读诊断**工具，让 AI 看见操作台能看到的数据，形成「部署 → 查健康 → 读日志 → 决策」闭环：
+外加**只读诊断**工具，让 AI 看见操作台能看到的数据，形成「部署 → 查健康 → 读日志 → 决策」闭环：
 
 | MCP 工具 | 作用 |
 |---|---|
@@ -160,6 +223,10 @@ vibe-launch mcp
 | `get_server_stats` | 服务器 CPU / 内存 / 磁盘 / 负载指标 |
 | `list_containers` | 列出容器（含已停止） |
 | `check_ports` | 数据库端口暴露检测 |
+| `check_network` | 国内网络体检（Docker Hub / GitHub / npm / PyPI 可达性） |
+| `get_advisories` | 汇总当前问题 + 每条怎么处理 |
+| `check_config` | 清单体检（路径、占位部署命令、缺失的服务器等） |
+| `get_oplog` | 操作日志（谁在什么时候部署 / 回滚 / 改了什么） |
 
 > MCP 只暴露**安全幂等的动词 + 只读诊断**。盯实时日志流、开隧道、回滚、删容器、文件读写这类交互 / 有副作用的操作只在操作台（`ui`）里，不进 MCP —— 不让 AI 自动碰。
 
@@ -211,7 +278,7 @@ vibe-launch tunnel prod --remote-port 8001 --local-port 18001   # 任意端口
 
 ## 🧭 设计原则
 
-- **不做 1Panel / k8s 已经做好的事** —— 不跑容器、不管数据库、不反代、不 build 镜像
+- **不做 1Panel / k8s 已经做好的事** —— 不做容器编排平台、不管数据库、不做反代面板、不 build 镜像；反代只做「域名 → 上游」的声明式站点配置（裸机 Caddy，已有 1Panel 就写进它的 OpenResty）
 - **只做缺的那块** —— 多服务器多项目的**集中编排 + 清单 + AI 接口**
 - **清单 + 专用 key** 都在本地 `~/.vibe-launch/`，透明可控
 

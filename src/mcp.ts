@@ -10,7 +10,8 @@ import { onboard } from "./core/onboard.js";
 import { setupGit } from "./core/setup-git.js";
 import { getHistory } from "./core/history.js";
 import { readOps } from "./core/oplog.js";
-import { doctor } from "./core/doctor.js";
+import { doctor, installDocker } from "./core/doctor.js";
+import { applyProxy } from "./core/proxy.js";
 import { lintConfig } from "./core/lint.js";
 import { advise } from "./core/advise.js";
 import { preDeploy } from "./core/predeploy.js";
@@ -211,6 +212,48 @@ export async function startMcp() {
     async ({ server }) => {
       try { return text(await doctor(loadConfig(), server)); }
       catch (e) { return { ...text({ error: (e as Error).message }), isError: true }; }
+    }
+  );
+
+  server.tool(
+    "install_docker",
+    "给服务器装 Docker（含 compose 插件），已装则直接返回版本。download.docker.com 不通（国内常见）会自动改用阿里云 docker-ce 源。" +
+      "会改系统包源、装系统包 —— 调用前先向用户确认。",
+    {
+      server: z.string().describe("服务器别名"),
+      mirror: z.enum(["auto", "official", "aliyun"]).optional().describe("安装源，默认 auto（自动判断）"),
+    },
+    async ({ server, mirror }) => {
+      const r = await installDocker(loadConfig(), server, { mirror });
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "apply_proxy",
+    "给项目配域名反代并生效（HTTPS）。自动按服务器现状选：已有 1Panel OpenResty 就写进它的 conf.d（不抢端口），否则用 Caddy（需先 vl proxy setup）。" +
+      "传 domain/upstream/cert 会先存进项目配置再生效；cert 是 vl proxy cert add 存过的证书名（Cloudflare 源站证书走这个；1Panel 机器开 HTTPS 必填）。" +
+      "写入前会校验配置，失败自动回滚、不影响已有站点。",
+    {
+      project: z.string().describe("项目名，见 list_projects"),
+      domain: z.string().optional().describe("对外域名，多个用空格分隔"),
+      upstream: z.string().optional().describe("上游 host:port，如 127.0.0.1:8000"),
+      cert: z.string().optional().describe("证书名（vl proxy cert add 存的）"),
+      tls: z.boolean().optional().describe("false 则只走 http"),
+    },
+    async ({ project, domain, upstream, cert, tls }) => {
+      const c = loadConfig();
+      if (domain || upstream || cert !== undefined || tls !== undefined) {
+        const p = c.projects[project];
+        if (!p) return { ...text({ error: `项目不存在：${project}` }), isError: true };
+        const cur = p.proxy;
+        const d = domain || cur?.domain;
+        if (!d) return { ...text({ error: "项目还没有 proxy 配置，需要传 domain" }), isError: true };
+        p.proxy = { domain: d, upstream: upstream || cur?.upstream || "127.0.0.1:8000", tls: tls ?? cur?.tls, cert: cert ?? cur?.cert };
+        saveConfig(c);
+      }
+      const r = await applyProxy(loadConfig(), project);
+      return { ...text(r), isError: !r.success };
     }
   );
 
