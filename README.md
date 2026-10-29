@@ -209,6 +209,8 @@ vibe-launch mcp
 | `restart <项目>` | `restart_project` |
 | `run <项目> <命令>` | `run_command` |
 | `docker-install <服务器>` | `install_docker` |
+| `proxy setup <服务器>` | `setup_proxy` |
+| `proxy cert add <服务器> <名字>` | `add_cert`（私钥只写进服务器文件，不进对话） |
 | `proxy apply <项目>` | `apply_proxy`（可顺带传域名 / 上游 / 证书名） |
 | `status [项目]` | `get_status` |
 | `ls` | `list_projects` |

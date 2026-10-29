@@ -11,7 +11,7 @@ import { setupGit } from "./core/setup-git.js";
 import { getHistory } from "./core/history.js";
 import { readOps } from "./core/oplog.js";
 import { doctor, installDocker } from "./core/doctor.js";
-import { applyProxy } from "./core/proxy.js";
+import { applyProxy, setupProxy, addCert } from "./core/proxy.js";
 import { lintConfig } from "./core/lint.js";
 import { advise } from "./core/advise.js";
 import { preDeploy } from "./core/predeploy.js";
@@ -231,8 +231,8 @@ export async function startMcp() {
 
   server.tool(
     "apply_proxy",
-    "给项目配域名反代并生效（HTTPS）。自动按服务器现状选：已有 1Panel OpenResty 就写进它的 conf.d（不抢端口），否则用 Caddy（需先 vl proxy setup）。" +
-      "传 domain/upstream/cert 会先存进项目配置再生效；cert 是 vl proxy cert add 存过的证书名（Cloudflare 源站证书走这个；1Panel 机器开 HTTPS 必填）。" +
+    "给项目配域名反代并生效（HTTPS）。自动按服务器现状选：已有 1Panel OpenResty 就写进它的 conf.d（不抢端口），否则用 Caddy（需先 setup_proxy）。" +
+      "传 domain/upstream/cert 会先存进项目配置再生效；cert 是 add_cert 存过的证书名（Cloudflare 源站证书走这个；1Panel 机器开 HTTPS 必填）。" +
       "写入前会校验配置，失败自动回滚、不影响已有站点。",
     {
       project: z.string().describe("项目名，见 list_projects"),
@@ -253,6 +253,37 @@ export async function startMcp() {
         saveConfig(c);
       }
       const r = await applyProxy(loadConfig(), project);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "setup_proxy",
+    "准备服务器的反代（每台一次）：已有 1Panel OpenResty 只做识别、不装任何东西；否则装 Caddy 并接好线。" +
+      "80/443 被别的程序占用时直接报错、不安装。裸机会装系统包 —— 调用前先向用户确认。",
+    { server: z.string().describe("服务器别名") },
+    async ({ server }) => {
+      const r = await setupProxy(loadConfig(), server);
+      return { ...text(r), isError: !r.success };
+    }
+  );
+
+  server.tool(
+    "add_cert",
+    "把证书（如 Cloudflare 源站证书）存到服务器，之后 apply_proxy 的 cert 传这个名字。" +
+      "来源二选一：用户本机的证书/私钥文件路径（certFile + keyFile），或服务器上已有的证书目录（fromDir，含 fullchain.pem + privkey.pem，如 1Panel 站点的 ssl 目录）。" +
+      "私钥只写进服务器文件，不回显、不进日志；不要把私钥内容读进对话。",
+    {
+      server: z.string().describe("服务器别名"),
+      name: z.string().describe("证书名，只允许字母数字 . _ -，如 my-origin"),
+      certFile: z.string().optional().describe("本机证书文件路径（如 origin.pem）"),
+      keyFile: z.string().optional().describe("本机私钥文件路径（如 origin.key）"),
+      fromDir: z.string().optional().describe("服务器上已有证书目录的绝对路径"),
+    },
+    async ({ server, name, certFile, keyFile, fromDir }) => {
+      if (!fromDir && !(certFile && keyFile))
+        return { ...text({ error: "需要 certFile + keyFile，或 fromDir" }), isError: true };
+      const r = await addCert(loadConfig(), server, name, { certFile, keyFile, fromDir });
       return { ...text(r), isError: !r.success };
     }
   );
