@@ -117,10 +117,11 @@ program
     // 前端一体：走独立通道（本地 build + 传产物），不跑服务器 deploy 命令
     if (opts.frontend) {
       console.log(`==> 前端部署 ${project} …`);
-      const r = await deployFrontend(cfg(), project);
+      const r = await deployFrontend(cfg(), project, { dryRun: opts.dryRun });
       for (const s of r.steps) console.log("  " + s);
       for (const h of r.health) console.log(`  健康 ${h.url} → ${h.httpCode} ${h.ok ? "✓" : "✗"}`);
-      if (r.success) console.log(`✅ ${project} 前端已上线`);
+      if (r.success && opts.dryRun) console.log("（dry-run：以上只是计划，未构建、未上传、未重启）");
+      else if (r.success) console.log(`✅ ${project} 前端已上线`);
       else { console.error(`❌ 前端部署失败：${r.error ?? "未知"}`); process.exitCode = 1; }
       return;
     }

@@ -172,7 +172,7 @@ export async function startUi(
       // 部署（记历史）。?frontend=1 走前端一体部署；?dryRun=1 只返回执行计划（含钩子）
       if (path.startsWith("/api/deploy/") && req.method === "POST") {
         const name = decodeURIComponent(path.slice("/api/deploy/".length));
-        if (q.get("frontend") === "1") return json(res, 200, { __frontend: true, ...(await deployFrontend(loadConfig(), name)) });
+        if (q.get("frontend") === "1") return json(res, 200, { __frontend: true, ...(await deployFrontend(loadConfig(), name, { dryRun: q.get("dryRun") === "1" })) });
         const r = await deploy(loadConfig(), name, { dryRun: q.get("dryRun") === "1" }); // 历史已在 core deploy() 内记录
         return json(res, 200, r);
       }

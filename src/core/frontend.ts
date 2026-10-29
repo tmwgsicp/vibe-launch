@@ -23,7 +23,11 @@ export interface FrontendResult {
   error?: string;
 }
 
-export async function deployFrontend(config: Config, projectName: string): Promise<FrontendResult> {
+export async function deployFrontend(
+  config: Config,
+  projectName: string,
+  opts: { dryRun?: boolean } = {}
+): Promise<FrontendResult> {
   const { project, server, serverName } = getProject(config, projectName);
   const res: FrontendResult = { project: projectName, server: serverName, steps: [], health: [], success: false };
   const fe = project.frontend;
@@ -33,6 +37,18 @@ export async function deployFrontend(config: Config, projectName: string): Promi
     if (!fe.target || !fe.target.startsWith("/")) throw new Error("frontend.target 需为服务器绝对路径");
 
     const localCwd = fe.cwd ? resolve(fe.cwd) : process.cwd();
+
+    // dry-run：只列计划，不构建、不连服务器、不记历史
+    if (opts.dryRun) {
+      const target = fe.target.replace(/\/+$/, "");
+      if (fe.build) res.steps.push(`[计划] 本地构建：${fe.build}（cwd=${localCwd}）`);
+      res.steps.push(`[计划] 上传 ${resolve(localCwd, fe.dist)} → ${serverName}:${target}.vlnew`);
+      res.steps.push(`[计划] 原子替换 → ${target}（旧产物备份到 ${target}.vlbak）`);
+      for (const name of fe.restart ?? []) res.steps.push(`[计划] docker restart ${name}`);
+      for (const url of project.health ?? []) res.steps.push(`[计划] 健康检查 ${url}`);
+      res.success = true;
+      return res;
+    }
 
     // 1. 本地构建（在你自己机器上跑）
     if (fe.build) {
@@ -102,7 +118,9 @@ export async function deployFrontend(config: Config, projectName: string): Promi
     res.error = (e as Error).message;
     return res;
   } finally {
-    recordDeploy({ project: projectName, ts: Date.now(), success: res.success, error: res.error, action: "deploy" });
-    recordOp("frontend", projectName, res.success, res.error);
+    if (!opts.dryRun) {
+      recordDeploy({ project: projectName, ts: Date.now(), success: res.success, error: res.error, action: "deploy" });
+      recordOp("frontend", projectName, res.success, res.error);
+    }
   }
 }
