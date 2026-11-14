@@ -9,6 +9,8 @@ import { getServerOf } from "./config.js";
 import { runOnServer } from "./ssh.js";
 import { shQuote } from "./sh.js";
 import { recordOp } from "./oplog.js";
+import { getServerStats } from "./serverstats.js";
+import { memoryIssues } from "./advise.js";
 
 /** 默认公共镜像源（较 durable 的社区源；仍可能失效，故建议配完用 doctor 复验）。 */
 export const DEFAULT_DOCKER_MIRRORS = ["https://docker.m.daocloud.io"];
@@ -35,6 +37,12 @@ export interface DoctorResult {
   dns: string[];             // /etc/resolv.conf 里的 nameserver
   currentMirrors: string[];  // 现有 registry-mirrors
   probes: Probe[];
+  /** 内存健康（实际生效值，非配置文件）+ 发现的问题 */
+  system?: {
+    memPct: number | null; memTotalMb: number | null; swapTotalMb: number | null; swapPct: number | null;
+    swappiness: number | null; psiMem: number | null; psiIo: number | null; oomGuard: boolean | null;
+    issues: { level: "error" | "warn"; problem: string; fix: string; cmd?: string }[];
+  };
   error?: string;
 }
 
@@ -110,6 +118,20 @@ export async function doctor(config: Config, target: string): Promise<DoctorResu
     // curl 没装：doctor 探不了，明确告知（而不是一排 000 让人误判成没网）
     if (!res.curl && !res.probes.length) {
       for (const p of PROBES) res.probes.push({ name: p.name, url: p.url, code: "—", timeMs: 0, ok: false, reason: "服务器没装 curl，doctor 无法探测（vl run <项目> \"安装 curl\"）" });
+    }
+    // 系统健康：现场采一次，规则与监测建议共用（advise.memoryIssues），只读
+    const st = await getServerStats(server);
+    if (st.reachable) {
+      const pct = (u?: number, t?: number) => (t && u != null ? Math.round((u / t) * 100) : null);
+      const m = {
+        memPct: pct(st.memUsedMb, st.memTotalMb), swapPct: pct(st.swapUsedMb, st.swapTotalMb),
+        swappiness: st.swappiness ?? null, psiMem: st.psiMemFull ?? null, psiIo: st.psiIoFull ?? null, oomGuard: st.oomGuard ?? null,
+      };
+      res.system = {
+        memPct: m.memPct, memTotalMb: st.memTotalMb ?? null, swapTotalMb: st.swapTotalMb ?? null, swapPct: m.swapPct,
+        swappiness: m.swappiness, psiMem: m.psiMem, psiIo: m.psiIo, oomGuard: m.oomGuard,
+        issues: memoryIssues(target, m).map((a) => ({ level: a.level, problem: a.problem, fix: a.fix, cmd: a.action?.cmd })),
+      };
     }
     return res;
   } catch (e) {

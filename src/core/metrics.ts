@@ -22,6 +22,10 @@ export interface Sample {
   tcpConns?: number | null;
   netRx?: number | null; // MB/s（采集端从累计字节算的速率）
   netTx?: number | null;
+  swappiness?: number | null;
+  psiMem?: number | null;   // 内存 PSI full avg60（%）
+  psiIo?: number | null;    // IO PSI full avg60（%）
+  oomGuard?: boolean | null;
   // project
   healthOk?: boolean | null;
   cUp?: number;

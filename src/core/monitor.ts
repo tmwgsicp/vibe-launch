@@ -45,6 +45,10 @@ export async function collectOnce(config: Config, now: number): Promise<Sample[]
           inodePct: pct(st.inodesUsed, st.inodesTotal),
           tcpConns: st.tcpEstablished ?? null,
           netRx, netTx,
+          swappiness: st.swappiness ?? null,
+          psiMem: st.psiMemFull ?? null,
+          psiIo: st.psiIoFull ?? null,
+          oomGuard: st.oomGuard ?? null,
         });
       } catch { samples.push({ ts: now, kind: "server", name, reachable: false }); }
     })

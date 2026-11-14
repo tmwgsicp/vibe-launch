@@ -27,6 +27,12 @@ export interface ServerStats {
   arch?: string;     // 架构，x86_64/aarch64
   hostname?: string;
   dockerVer?: string;
+  // 内存健康（2026-11-15 整机假死事故后补）：只看「swap 用了多少」会被 swappiness=0 蒙住——
+  // swap 永远 0%，内存一紧机器直接颠簸卡死（SSH 都进不去）且不触发 OOM。
+  swappiness?: number;   // /proc/sys/vm/swappiness 的实际生效值（不是配置文件里写的值）
+  psiMemFull?: number;   // /proc/pressure/memory full avg60：近 1 分钟所有任务同时卡在等内存的时间占比 %
+  psiIoFull?: number;    // /proc/pressure/io full avg60
+  oomGuard?: boolean;    // earlyoom 或 systemd-oomd 是否在跑（内存耗尽前主动杀进程，防整机卡死）
   error?: string;
 }
 
@@ -54,6 +60,10 @@ const STATS_CMD = [
   `echo "A:$(uname -m)"`,
   `echo "H:$(hostname 2>/dev/null || cat /proc/sys/kernel/hostname 2>/dev/null)"`,
   `echo "V:$(docker version -f '{{.Server.Version}}' 2>/dev/null)"`,
+  `echo "S:$(cat /proc/sys/vm/swappiness 2>/dev/null)"`,
+  // PSI 需内核 4.20+（CentOS7 的 3.10 没有）→ 缺失时输出 "-"，保持两列位置不错位
+  `echo "Q:$(awk '/^full/{split($3,a,"=");print a[2]}' /proc/pressure/memory 2>/dev/null || echo -) $(awk '/^full/{split($3,a,"=");print a[2]}' /proc/pressure/io 2>/dev/null || echo -)"`,
+  `echo "E:$( (systemctl is-active earlyoom; systemctl is-active systemd-oomd) 2>/dev/null | tr '\\n' ' ')"`,
 ].join("; ");
 
 const kbToMb = (kb: number) => (isNaN(kb) ? NaN : Math.round(kb / 1024));
@@ -76,6 +86,9 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
     const tcp = parseInt(pick("T:"), 10);
     const k = pick("K:").split(/\s+/).map(Number);
     const cores = parseInt(pick("C:"), 10);
+    const swappiness = parseInt(pick("S:"), 10);
+    const psi = pick("Q:").split(/\s+/).map((x) => parseFloat(x)); // "-" → NaN
+    const guard = pick("E:").split(/\s+/).filter(Boolean);
 
     return {
       reachable: true,
@@ -101,6 +114,10 @@ export async function getServerStats(server: ServerConfig): Promise<ServerStats>
       arch: pick("A:") || undefined,
       hostname: pick("H:") || undefined,
       dockerVer: pick("V:") || undefined,
+      swappiness: isNaN(swappiness) ? undefined : swappiness,
+      psiMemFull: !isNaN(psi[0]) ? psi[0] : undefined,
+      psiIoFull: !isNaN(psi[1]) ? psi[1] : undefined,
+      oomGuard: guard.length ? guard.includes("active") : undefined, // 没有 systemctl 时未知
     };
   } catch (e) {
     return { reachable: false, error: (e as Error).message };

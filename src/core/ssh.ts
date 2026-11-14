@@ -39,17 +39,28 @@ export async function connectSSH(server: ServerConfig): Promise<NodeSSH> {
         const k = pickPrivateKeyPath(server);
         return k ? { privateKeyPath: k } : { agent: process.env.SSH_AUTH_SOCK || undefined };
       })();
-  await ssh.connect({
-    host: server.host,
-    username: server.user,
-    port: server.port ?? 22,
-    ...auth,
-    readyTimeout: 20000,
-    // 保活：池里的长连接每 15s 发一次心跳，连发 3 次无应答即判定断开——
-    // 既防 NAT/服务器空闲超时悄悄掐断，也能让死连接被及时发现并重连。
-    keepaliveInterval: 15000,
-    keepaliveCountMax: 3,
-  });
+  try {
+    await ssh.connect({
+      host: server.host,
+      username: server.user,
+      port: server.port ?? 22,
+      ...auth,
+      readyTimeout: 20000,
+      // 保活：池里的长连接每 15s 发一次心跳，连发 3 次无应答即判定断开——
+      // 既防 NAT/服务器空闲超时悄悄掐断，也能让死连接被及时发现并重连。
+      keepaliveInterval: 15000,
+      keepaliveCountMax: 3,
+    });
+  } catch (e) {
+    // 端口通但握手超时 ≠ 网络问题：sshd 已接受连接却没力气完成握手，多半是整机内存/IO 耗尽假死
+    // （2026-11-15 实测 150s 都握不完）。直接说清该怎么办，别让人反复重试或去查防火墙。
+    if (/handshake/i.test((e as Error).message))
+      throw new Error(
+        `${(e as Error).message}（${server.host}：端口能连上但 SSH 握手不完成，通常是整机内存/IO 耗尽卡死。` +
+          `等几分钟可能自行恢复；不恢复就去云控制台强制重启，重启后跑 vl doctor 查内存健康）`
+      );
+    throw e;
+  }
   return ssh;
 }
 

@@ -48,7 +48,7 @@ AI 帮你把项目写完了，但**部署上线**还是一道坎：
 - 🔒 **安全隧道** —— 内网 PG / Redis 映射到本地，公网 DB 端口可彻底关闭
 - 🧭 **新项目识别** —— `suggest` 探测服务器上项目的类型（VitePress / Nuxt / Next / Python / Node / 静态页 / Dockerfile），给出推荐部署命令 + 端口 + 健康检查
 - 🌐 **反代 + HTTPS** —— 项目配置里写「域名 → 上游」即生效。裸机自动装 Caddy；已有 1Panel 的服务器直接写进它的 OpenResty，不抢端口。证书可自动签，也可用 Cloudflare 源站证书
-- 🐳 **装 Docker + 国内网络体检** —— `docker-install` 一条命令装好 Docker（官方源不通自动换阿里云源）；`doctor` 探 Docker Hub / GitHub / npm / PyPI 可达性，`docker-mirror` 配镜像加速
+- 🐳 **装 Docker + 国内网络体检** —— `docker-install` 一条命令装好 Docker（官方源不通自动换阿里云源）；`doctor` 探 Docker Hub / GitHub / npm / PyPI 可达性，并查内存健康（swap 是否真生效、内存/IO 压力、有无 OOM 兜底——内存一紧整机卡死、SSH 都进不去的那类事故，监测和告警也会报），`docker-mirror` 配镜像加速
 - 🌍 **跨发行版** —— 指标采集只依赖 procfs + POSIX，CentOS 7 老到 git 1.8 也兼容
 
 ## 📦 安装

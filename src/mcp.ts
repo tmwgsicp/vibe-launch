@@ -205,7 +205,8 @@ export async function startMcp() {
 
   server.tool(
     "check_network",
-    "网络体检（只读）：从服务器探 Docker Hub / GitHub / Caddy / npm / PyPI 的可达性（HTTP 码 + 耗时 + 失败原因）+ DNS + docker 版本 + 现有镜像。" +
+    "服务器体检（只读）：system 段给内存健康（swappiness 实际生效值、内存/IO 压力 PSI、有无 earlyoom 兜底）及发现的问题——机器变慢/卡死/抓取频繁超时先看这里；" +
+      "另探 Docker Hub / GitHub / Caddy / npm / PyPI 的可达性（HTTP 码 + 耗时 + 失败原因）+ DNS + docker 版本 + 现有镜像。" +
       "部署失败 / git pull 卡住 / docker pull 慢时，用它判断是网络/DNS/证书/被墙哪种问题，而不是瞎猜。" +
       "reason 会说清：DNS 解析失败 / 连接超时(被墙) / CA 证书缺失 等。",
     { server: z.string().describe("服务器别名，见 list_projects") },

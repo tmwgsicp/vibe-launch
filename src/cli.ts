@@ -572,7 +572,7 @@ program
 
 program
   .command("doctor <server>")
-  .description("网络体检：探 Docker Hub/GitHub/Caddy/npm/PyPI 可达性 + docker 镜像配置（国内排查）")
+  .description("体检：内存健康（swap 是否真生效/内存与IO压力/OOM兜底）+ 探 Docker Hub/GitHub/Caddy/npm/PyPI 可达性 + docker 镜像配置")
   .action(async (server: string) => {
     console.log(`==> 体检 ${server} …`);
     const r = await doctor(cfg(), server);
@@ -586,6 +586,14 @@ program
       console.log(`  → 全部不通且没有 DNS：先修这台机的 DNS（/etc/resolv.conf 加 nameserver），再谈镜像`);
     else if (r.probes.find((p) => p.name === "Docker Hub" && !p.ok))
       console.log(`  → Docker Hub 不可达，建议：vl docker-mirror ${server}（云机优先用云内网镜像）`);
+    const s = r.system;
+    if (s) {
+      const na = (v: number | null, unit = "") => (v == null ? "未知" : v + unit);
+      console.log(`  内存：已用 ${na(s.memPct, "%")} / ${na(s.memTotalMb, "MB")}　swap：${s.swapTotalMb ? `${s.swapTotalMb}MB 已用 ${na(s.swapPct, "%")}` : "未配"}　swappiness(实际)：${na(s.swappiness)}`);
+      console.log(`  压力(近1分钟)：内存 ${na(s.psiMem, "%")}　IO ${na(s.psiIo, "%")}　OOM 兜底：${s.oomGuard == null ? "未知" : s.oomGuard ? "有" : "无"}`);
+      for (const i of s.issues) console.log(`  ${i.level === "error" ? "✗" : "⚠"} ${i.problem}\n    → ${i.fix}${i.cmd ? "\n    排查：" + i.cmd : ""}`);
+      if (!s.issues.length) console.log("  ✓ 内存健康");
+    }
   });
 
 program
